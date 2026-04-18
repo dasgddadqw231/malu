@@ -1,7 +1,7 @@
-export const dynamic = "force-dynamic";
-
+import { connection } from "next/server";
 import BacktestPageClient from "./backtest-client";
 
-export default function BacktestPage() {
+export default async function BacktestPage() {
+  await connection();
   return <BacktestPageClient />;
 }
