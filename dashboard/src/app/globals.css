@@ -1,0 +1,624 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-jarvis: var(--jarvis);
+  --color-jarvis-dim: var(--jarvis-dim);
+  --color-jarvis-glow: var(--jarvis-glow);
+  --color-jarvis-bg: var(--jarvis-bg);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --jarvis: #00d4ff;
+  --jarvis-dim: #0a3d5c;
+  --jarvis-glow: rgba(0, 212, 255, 0.15);
+  --jarvis-bg: rgba(0, 212, 255, 0.05);
+}
+
+.dark {
+  --background: #06080d;
+  --foreground: #e0f0ff;
+  --card: rgba(0, 212, 255, 0.04);
+  --card-foreground: #e0f0ff;
+  --popover: #0c1220;
+  --popover-foreground: #e0f0ff;
+  --primary: #00d4ff;
+  --primary-foreground: #06080d;
+  --secondary: rgba(0, 212, 255, 0.1);
+  --secondary-foreground: #00d4ff;
+  --muted: rgba(0, 212, 255, 0.06);
+  --muted-foreground: #7aabc4;
+  --accent: rgba(0, 212, 255, 0.1);
+  --accent-foreground: #00d4ff;
+  --destructive: #ff3333;
+  --border: rgba(0, 212, 255, 0.12);
+  --input: rgba(0, 212, 255, 0.1);
+  --ring: rgba(0, 212, 255, 0.4);
+  --chart-1: #00d4ff;
+  --chart-2: #00ff88;
+  --chart-3: #ff6b00;
+  --chart-4: #a855f7;
+  --chart-5: #ff3366;
+  --sidebar: #0a0e18;
+  --sidebar-foreground: #e0f0ff;
+  --sidebar-primary: #00d4ff;
+  --sidebar-primary-foreground: #06080d;
+  --sidebar-accent: rgba(0, 212, 255, 0.1);
+  --sidebar-accent-foreground: #00d4ff;
+  --sidebar-border: rgba(0, 212, 255, 0.12);
+  --sidebar-ring: rgba(0, 212, 255, 0.4);
+  --jarvis: #00d4ff;
+  --jarvis-dim: #0a3d5c;
+  --jarvis-glow: rgba(0, 212, 255, 0.15);
+  --jarvis-bg: rgba(0, 212, 255, 0.05);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* JARVIS Grid Background */
+.jarvis-grid {
+  background-image:
+    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* JARVIS Card Style */
+.jarvis-card {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.06) 0%, rgba(0, 212, 255, 0.02) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+}
+
+.jarvis-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.5), transparent);
+}
+
+/* Glow border effect */
+.jarvis-glow {
+  box-shadow:
+    0 0 15px rgba(0, 212, 255, 0.08),
+    inset 0 0 15px rgba(0, 212, 255, 0.03);
+}
+
+.jarvis-glow-strong {
+  box-shadow:
+    0 0 20px rgba(0, 212, 255, 0.15),
+    0 0 60px rgba(0, 212, 255, 0.05),
+    inset 0 0 20px rgba(0, 212, 255, 0.05);
+}
+
+/* Scan line animation */
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.jarvis-scanline::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(0, 212, 255, 0.03) 50%,
+    transparent 100%
+  );
+  animation: scanline 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Pulse animation for active elements */
+@keyframes jarvis-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.jarvis-pulse {
+  animation: jarvis-pulse 2s ease-in-out infinite;
+}
+
+/* Corner accents for cards */
+.jarvis-corners {
+  position: relative;
+}
+
+.jarvis-corners::before,
+.jarvis-corners::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+
+.jarvis-corners::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid rgba(0, 212, 255, 0.6);
+  border-left: 2px solid rgba(0, 212, 255, 0.6);
+}
+
+.jarvis-corners::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid rgba(0, 212, 255, 0.6);
+  border-right: 2px solid rgba(0, 212, 255, 0.6);
+}
+
+/* Text glow */
+.text-glow {
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.5), 0 0 30px rgba(0, 212, 255, 0.2);
+}
+
+.text-glow-sm {
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+}
+
+/* Progress bar glow */
+.progress-glow {
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.4);
+}
+
+/* Hexagon pattern overlay (subtle) */
+.hex-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='49' viewBox='0 0 28 49'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%2300d4ff' fill-opacity='0.02'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Scrollbar styling */
+.jarvis-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.jarvis-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 212, 255, 0.05);
+}
+.jarvis-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.2);
+  border-radius: 2px;
+}
+.jarvis-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.35);
+}
+
+/* Arc reactor spinner */
+@keyframes arc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.arc-spinner {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 212, 255, 0.15);
+  border-top-color: #00d4ff;
+  animation: arc-spin 1.2s linear infinite;
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+}
+
+/* Status indicator pulse */
+@keyframes status-pulse {
+  0%, 100% { box-shadow: 0 0 4px currentColor; }
+  50% { box-shadow: 0 0 12px currentColor, 0 0 20px currentColor; }
+}
+
+.status-dot {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+/* Data stream effect for live feed */
+@keyframes data-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.data-row {
+  animation: data-enter 0.3s ease-out;
+}
+
+/* ===== JARVIS HOVER & TOUCH INTERACTIONS ===== */
+
+/* Card hover glow spotlight - follows mouse via CSS custom properties */
+.jarvis-card-interactive {
+  --glow-x: 50%;
+  --glow-y: 50%;
+  transition: transform 0.3s cubic-bezier(0.03, 0.98, 0.52, 0.99), box-shadow 0.3s ease;
+  will-change: transform;
+  transform-style: preserve-3d;
+}
+
+.jarvis-card-interactive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    400px circle at var(--glow-x) var(--glow-y),
+    rgba(0, 212, 255, 0.12),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.jarvis-card-interactive:hover::after {
+  opacity: 1;
+}
+
+/* Border sweep animation on hover */
+@keyframes border-sweep {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+
+.jarvis-card-interactive::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 212, 255, 0.5) 25%,
+    rgba(0, 212, 255, 0.8) 50%,
+    rgba(0, 212, 255, 0.5) 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: none;
+  z-index: 2;
+}
+
+.jarvis-card-interactive:hover::before {
+  animation: border-sweep 2s linear infinite;
+}
+
+/* Enhanced hover glow */
+.jarvis-card-interactive:hover {
+  box-shadow:
+    0 0 25px rgba(0, 212, 255, 0.15),
+    0 0 60px rgba(0, 212, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 0 30px rgba(0, 212, 255, 0.04);
+  border-color: rgba(0, 212, 255, 0.35);
+}
+
+/* Scan line speeds up on hover */
+.jarvis-card-interactive:hover .jarvis-scanline-inner::after,
+.jarvis-card-interactive.jarvis-scanline:hover::after {
+  animation-duration: 3s;
+}
+
+/* Touch ripple effect */
+@keyframes ripple-expand {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
+  }
+}
+
+.touch-ripple {
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 212, 255, 0.3), transparent 70%);
+  pointer-events: none;
+  animation: ripple-expand 0.6s ease-out forwards;
+  z-index: 10;
+}
+
+/* Holographic shimmer on hover */
+@keyframes holo-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.jarvis-card-interactive:hover .holo-shimmer {
+  opacity: 1;
+}
+
+.holo-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(0, 212, 255, 0.05) 45%,
+    rgba(0, 212, 255, 0.1) 50%,
+    rgba(0, 212, 255, 0.05) 55%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: holo-shimmer 3s ease-in-out infinite;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+/* Button hover interaction - magnetic pull feel */
+.jarvis-btn-interactive {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.03, 0.98, 0.52, 0.99);
+}
+
+.jarvis-btn-interactive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at var(--glow-x, 50%) var(--glow-y, 50%),
+    rgba(0, 212, 255, 0.2),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.jarvis-btn-interactive:hover::after {
+  opacity: 1;
+}
+
+.jarvis-btn-interactive:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 20px rgba(0, 212, 255, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.jarvis-btn-interactive:active {
+  transform: translateY(0) scale(0.97);
+  transition-duration: 0.1s;
+}
+
+/* HUD stat hover */
+.hud-stat-interactive {
+  --glow-x: 50%;
+  --glow-y: 50%;
+  transition: all 0.3s cubic-bezier(0.03, 0.98, 0.52, 0.99);
+  position: relative;
+  overflow: hidden;
+}
+
+.hud-stat-interactive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    250px circle at var(--glow-x) var(--glow-y),
+    rgba(0, 212, 255, 0.1),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.hud-stat-interactive:hover::after {
+  opacity: 1;
+}
+
+.hud-stat-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 20px rgba(0, 212, 255, 0.1),
+    0 8px 24px rgba(0, 0, 0, 0.2);
+  border-color: rgba(0, 212, 255, 0.3);
+}
+
+.hud-stat-interactive:hover .hud-value {
+  text-shadow: 0 0 15px rgba(0, 212, 255, 0.5), 0 0 40px rgba(0, 212, 255, 0.2);
+}
+
+/* Live feed row hover */
+.feed-row-interactive {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.feed-row-interactive:hover {
+  background: rgba(0, 212, 255, 0.08);
+  padding-left: 12px;
+}
+
+.feed-row-interactive::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #00d4ff;
+  transform: scaleY(0);
+  transition: transform 0.2s ease;
+}
+
+.feed-row-interactive:hover::before {
+  transform: scaleY(1);
+}
+
+/* Corner accent animation on hover */
+@keyframes corner-pulse {
+  0%, 100% {
+    width: 12px;
+    height: 12px;
+    border-color: rgba(0, 212, 255, 0.6);
+  }
+  50% {
+    width: 18px;
+    height: 18px;
+    border-color: rgba(0, 212, 255, 0.9);
+  }
+}
+
+.jarvis-card-interactive:hover.jarvis-corners::before,
+.jarvis-card-interactive:hover.jarvis-corners::after {
+  animation: corner-pulse 2s ease-in-out infinite;
+}
+
+/* Touch active state */
+@media (hover: none) {
+  .jarvis-card-interactive:active {
+    transform: scale(0.98);
+    box-shadow:
+      0 0 30px rgba(0, 212, 255, 0.2),
+      inset 0 0 20px rgba(0, 212, 255, 0.05);
+    border-color: rgba(0, 212, 255, 0.4);
+    transition-duration: 0.1s;
+  }
+
+  .hud-stat-interactive:active {
+    transform: scale(0.97);
+    transition-duration: 0.1s;
+  }
+
+  .jarvis-btn-interactive:active {
+    transform: scale(0.95);
+  }
+}
+
+/* Particle burst on click */
+@keyframes particle-fly {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx), var(--ty)) scale(0);
+    opacity: 0;
+  }
+}
+
+.click-particle {
+  position: fixed;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #00d4ff;
+  box-shadow: 0 0 6px rgba(0, 212, 255, 0.6);
+  pointer-events: none;
+  z-index: 9999;
+  animation: particle-fly 0.6s ease-out forwards;
+}
+
+/* Allow page scroll even when dialog is open */
+body[style*="overflow: hidden"],
+body[style*="overflow:hidden"] {
+  overflow: auto !important;
+}
