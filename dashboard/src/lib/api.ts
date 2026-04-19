@@ -179,6 +179,19 @@ export interface BacktestTrade {
   exit_reason: string;
 }
 
+// Position Types
+export interface Position {
+  symbol: string;
+  side: string;
+  size: string;
+  entry_price: string;
+  unrealised_pnl: string;
+  leverage: string;
+  liq_price: string;
+  source: "bot" | "manual";
+  bot: { bot_id: string; name: string; status: string } | null;
+}
+
 // API functions
 export const api = {
   getDashboard: () => request<DashboardSummary>("/dashboard/summary"),
@@ -214,6 +227,8 @@ export const api = {
   getBotTrades: (id: string) => request<TradeHistory[]>(`/bots/${id}/trades`),
 
   getAllBotTrades: (limit = 200) => request<TradeHistory[]>(`/dashboard/trades?limit=${limit}`),
+
+  getPositions: () => request<Position[]>("/dashboard/positions"),
 
   killAll: () =>
     request<{ bots_stopped: string[]; errors: string[] }>("/dashboard/kill-all", {

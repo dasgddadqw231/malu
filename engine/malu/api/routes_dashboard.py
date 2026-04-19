@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
+from malu.exchange.models import Category
+
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
@@ -39,6 +41,42 @@ async def kill_all(request: Request):
     manager = request.app.state.bot_manager
     result = await manager.kill_all()
     return result
+
+
+@router.get("/positions")
+async def get_positions(request: Request):
+    """Get all open positions from Bybit, tagged as bot or manual."""
+    manager = request.app.state.bot_manager
+    client = manager.client
+
+    # Fetch all linear positions from Bybit
+    all_positions = await client.get_positions(Category.LINEAR)
+
+    # Build a map of symbol -> bot for identification
+    bot_symbols: dict[str, dict] = {}
+    for bot in manager.bots.values():
+        bot_symbols[bot.config.symbol] = {
+            "bot_id": bot.bot_id,
+            "name": bot.name,
+            "status": bot.status.value,
+        }
+
+    results = []
+    for pos in all_positions:
+        bot_info = bot_symbols.get(pos.symbol)
+        results.append({
+            "symbol": pos.symbol,
+            "side": pos.side.value,
+            "size": str(pos.size),
+            "entry_price": str(pos.entry_price),
+            "unrealised_pnl": str(pos.unrealised_pnl),
+            "leverage": pos.leverage,
+            "liq_price": str(pos.liq_price),
+            "source": "bot" if bot_info else "manual",
+            "bot": bot_info,
+        })
+
+    return results
 
 
 @router.post("/kill-switch/reset")

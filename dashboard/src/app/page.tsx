@@ -5,6 +5,7 @@ import { useDashboard } from "@/hooks/use-dashboard";
 import { BotCard } from "@/components/bot-card";
 import { KillSwitch } from "@/components/kill-switch";
 import { BootSound } from "@/components/click-effects";
+import { PositionPanel } from "@/components/position-panel";
 
 export default function Dashboard() {
   const { data, error, loading, refresh } = useDashboard();
@@ -133,6 +134,18 @@ export default function Dashboard() {
             </svg>
           }
         />
+      </div>
+
+      {/* Open Positions */}
+      <div className="mb-8 jarvis-boot jarvis-boot-3">
+        <div className="flex items-center gap-4 mb-4">
+          <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-jarvis/20 to-transparent jarvis-divider" />
+          <span className="text-xs font-mono text-jarvis/40 tracking-[0.3em] uppercase">
+            Open Positions
+          </span>
+          <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-jarvis/20 to-transparent" />
+        </div>
+        <PositionPanel />
       </div>
 
       {/* Bot Fleet Header */}
