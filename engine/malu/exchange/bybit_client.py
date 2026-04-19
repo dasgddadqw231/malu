@@ -145,6 +145,27 @@ class BybitClient:
             coin=usdt["coin"],
         )
 
+    async def set_trading_stop(
+        self,
+        category: Category,
+        symbol: str,
+        take_profit: Decimal | None = None,
+        stop_loss: Decimal | None = None,
+    ) -> dict:
+        """Set TP/SL on an existing position."""
+        params: dict = {
+            "category": category.value,
+            "symbol": symbol,
+            "positionIdx": 0,  # one-way mode
+        }
+        if take_profit is not None:
+            params["takeProfit"] = str(take_profit)
+        if stop_loss is not None:
+            params["stopLoss"] = str(stop_loss)
+        result = await self._run_sync(self._client.set_trading_stop, **params)
+        log.info("trading_stop_set", symbol=symbol, tp=str(take_profit), sl=str(stop_loss))
+        return result
+
     async def close_position(self, category: Category, symbol: str, side: Side, qty: Decimal) -> OrderResponse:
         """Close a position by placing an opposite market order."""
         close_side = Side.SELL if side == Side.BUY else Side.BUY

@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     reconcile_interval_sec: float = 30.0
     rate_limit_per_second: int = 10
 
+    # Manual risk guard
+    manual_risk_poll_sec: float = 15.0
+
     # WebSocket
     ws_enabled: bool = True
     ws_kline_intervals: str = "1,5,15"  # comma-separated

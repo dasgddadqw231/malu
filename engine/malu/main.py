@@ -15,6 +15,7 @@ from malu.api.ws import bot_event_handler, router as ws_router
 from malu.config import Settings
 from malu.core.bot import BotConfig
 from malu.core.bot_manager import BotManager
+from malu.core.manual_risk_guard import ManualRiskGuard
 from malu.core.budget import BudgetLedger
 from malu.core.kill_switch import KillSwitch
 from malu.core.rate_limiter import APIRateLimiter
@@ -109,10 +110,22 @@ async def lifespan(app: FastAPI):
 
     await manager.start()
 
+    # Start manual risk guard
+    manual_guard = ManualRiskGuard(
+        client=client,
+        risk_repo=risk_repo,
+        bot_manager=manager,
+        rate_limiter=rate_limiter,
+        poll_interval=settings.manual_risk_poll_sec,
+    )
+    await manual_guard.start()
+    app.state.manual_guard = manual_guard
+
     yield
 
     # Shutdown
     log.info("shutting_down")
+    await manual_guard.stop()
     await manager.shutdown()
     if market_data_feed:
         await market_data_feed.stop()

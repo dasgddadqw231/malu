@@ -30,3 +30,13 @@ async def update_risk_settings(request: Request, body: RiskSettingsUpdate):
     data = {k: v for k, v in body.model_dump().items() if v is not None}
     settings = repo.update(data)
     return settings.model_dump()
+
+
+@router.get("/guard/status")
+async def get_guard_status(request: Request):
+    guard = request.app.state.manual_guard
+    return {
+        "running": guard._task is not None and not guard._task.done(),
+        "poll_interval": guard.poll_interval,
+        "recent_actions": list(guard.recent_actions),
+    }
