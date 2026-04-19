@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { JarvisBackground } from "@/components/jarvis-background";
+import { ClickEffects } from "@/components/click-effects";
+import { JarvisBGM } from "@/components/jarvis-bgm";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -30,6 +32,8 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-background text-foreground jarvis-grid hex-pattern" suppressHydrationWarning>
         <JarvisBackground />
+        <ClickEffects />
+        <JarvisBGM />
         <div className="relative" style={{ zIndex: 1 }}>
           {children}
         </div>

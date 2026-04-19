@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ArrowLeftIcon, RefreshCwIcon } from "lucide-react";
+import { BootSound } from "@/components/click-effects";
 import { Button } from "@/components/ui/button";
 
 export default function BotTradesPage() {
@@ -69,6 +70,7 @@ export default function BotTradesPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <BootSound />
         <div className="arc-spinner" />
         <p className="text-sm font-mono text-jarvis/60 tracking-widest uppercase">
           Loading Bot Trades...
@@ -80,19 +82,19 @@ export default function BotTradesPage() {
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
       {/* Header */}
-      <header className="flex items-end justify-between mb-8">
+      <header className="flex items-end justify-between mb-8 jarvis-boot jarvis-boot-1">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <Link
               href="/"
-              className="text-jarvis/50 hover:text-jarvis transition-colors"
+              className="text-jarvis/50 hover:text-jarvis transition-colors jarvis-nav-link"
             >
               <ArrowLeftIcon className="size-5" />
             </Link>
-            <h1 className="text-3xl font-bold tracking-[0.2em] font-mono text-jarvis text-glow">
+            <h1 className="text-3xl font-bold tracking-[0.2em] font-mono text-jarvis text-glow jarvis-text-reveal">
               BOT TRADES
             </h1>
-            <div className="h-[1px] w-16 bg-gradient-to-r from-jarvis/60 to-transparent" />
+            <div className="h-[1px] w-16 bg-gradient-to-r from-jarvis/60 to-transparent jarvis-divider" />
           </div>
           <p className="text-xs font-mono text-muted-foreground tracking-[0.15em] uppercase">
             Execution history from your trading bots
@@ -201,7 +203,7 @@ export default function BotTradesPage() {
               {filteredTrades.map((trade) => {
                 const pnl = trade.pnl ? Number(trade.pnl) : null;
                 return (
-                  <TableRow key={trade.id} className="border-jarvis/5">
+                  <TableRow key={trade.id} className="border-jarvis/5 jarvis-table-row">
                     <TableCell className="font-mono text-xs text-jarvis/70">
                       {botName(trade.bot_id)}
                     </TableCell>

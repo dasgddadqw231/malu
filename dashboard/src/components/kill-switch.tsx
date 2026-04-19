@@ -69,7 +69,7 @@ export function KillSwitch({ isActive, onKilled }: { isActive: boolean; onKilled
       <Button
         size="lg"
         onClick={() => setOpen(true)}
-        className="font-mono text-xs tracking-[0.15em] uppercase transition-all bg-red-500/10 text-red-400/80 border border-red-500/20 hover:bg-red-500/20 hover:text-red-400 hover:shadow-[0_0_20px_rgba(255,50,50,0.15)]"
+        className="font-mono text-xs tracking-[0.15em] uppercase transition-all bg-red-500/10 text-red-400/80 border border-red-500/20 hover:bg-red-500/20 hover:text-red-400 jarvis-btn-danger"
       >
         <span className="flex items-center gap-2">
           <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">

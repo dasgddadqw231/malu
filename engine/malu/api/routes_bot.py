@@ -44,6 +44,7 @@ async def create_bot(req: BotCreateRequest, request: Request):
         symbol=db_bot.symbol,
         category=db_bot.category,
         seed_budget=db_bot.seed_budget,
+        leverage=db_bot.leverage,
         strategy_config=db_bot.strategy_config,
         bot_controls=db_bot.bot_controls,
         cycle_interval=db_bot.cycle_interval,
@@ -70,6 +71,7 @@ async def get_bot(bot_id: str, request: Request):
         "status": bot.status.value,
         "symbol": bot.config.symbol,
         "seed_budget": str(bot.config.seed_budget),
+        "leverage": bot.config.leverage,
         "strategy_config": bot.config.strategy_config,
         "bot_controls": bot.config.bot_controls,
         "guard_state": {
@@ -97,6 +99,8 @@ async def update_bot(bot_id: str, req: BotUpdateRequest, request: Request):
             bot.config.name = req.name
         if req.seed_budget is not None:
             bot.config.seed_budget = req.seed_budget
+        if req.leverage is not None:
+            bot.config.leverage = req.leverage
         if req.strategy_config is not None:
             bot.config.strategy_config = req.strategy_config
         if req.bot_controls is not None:

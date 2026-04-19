@@ -52,6 +52,7 @@ class PositionInfo(BaseModel):
     entry_price: Decimal
     unrealised_pnl: Decimal
     leverage: str = "1"
+    liq_price: Decimal = Decimal("0")
 
 
 class WalletBalance(BaseModel):

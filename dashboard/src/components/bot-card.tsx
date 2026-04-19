@@ -194,7 +194,7 @@ export function BotCard({
               variant="ghost"
               onClick={() => doAction("delete")}
               disabled={loading !== null}
-              className="text-red-400/70 hover:text-red-400 hover:bg-red-500/10 font-mono text-xs"
+              className="text-red-400/70 hover:text-red-400 hover:bg-red-500/10 jarvis-btn-danger font-mono text-xs"
             >
               DEL
             </Button>
@@ -215,7 +215,7 @@ export function BotCard({
               variant="destructive"
               onClick={() => doAction("kill")}
               disabled={loading !== null}
-              className="bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 jarvis-btn-interactive font-mono text-xs tracking-wider"
+              className="bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 jarvis-btn-interactive jarvis-btn-danger font-mono text-xs tracking-wider"
             >
               {loading === "kill" ? "..." : "KILL"}
             </Button>

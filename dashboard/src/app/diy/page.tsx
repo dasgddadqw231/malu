@@ -21,6 +21,7 @@ import {
   TimerIcon,
   PercentIcon,
 } from "lucide-react";
+import { BootSound } from "@/components/click-effects";
 
 function RuleIcon({ type }: { type: string }) {
   switch (type) {
@@ -96,6 +97,7 @@ export default function DiyPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <BootSound />
         <div className="arc-spinner" />
         <p className="text-sm font-mono text-jarvis/60 tracking-widest uppercase">Loading Signatures...</p>
       </div>
@@ -105,16 +107,16 @@ export default function DiyPage() {
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
       {/* Header */}
-      <header className="flex items-end justify-between mb-8">
+      <header className="flex items-end justify-between mb-8 jarvis-boot jarvis-boot-1">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <Link href="/" className="text-jarvis/50 hover:text-jarvis transition-colors">
+            <Link href="/" className="text-jarvis/50 hover:text-jarvis transition-colors jarvis-nav-link">
               <ArrowLeftIcon className="size-5" />
             </Link>
-            <h1 className="text-3xl font-bold tracking-[0.2em] font-mono text-jarvis text-glow">
+            <h1 className="text-3xl font-bold tracking-[0.2em] font-mono text-jarvis text-glow jarvis-text-reveal">
               SIGNATURE
             </h1>
-            <div className="h-[1px] w-16 bg-gradient-to-r from-jarvis/60 to-transparent" />
+            <div className="h-[1px] w-16 bg-gradient-to-r from-jarvis/60 to-transparent jarvis-divider" />
           </div>
           <p className="text-xs font-mono text-muted-foreground tracking-[0.15em] uppercase">
             Your saved trading strategies
@@ -143,7 +145,7 @@ export default function DiyPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 jarvis-boot jarvis-boot-2">
           {signatures.map((sig) => {
             const stats = sig.stats as Record<string, number>;
             const config = sig.strategy_config as Record<string, Record<string, unknown>>;

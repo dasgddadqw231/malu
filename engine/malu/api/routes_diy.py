@@ -221,6 +221,66 @@ class ChatMessageRequest(BaseModel):
     message: str
 
 
+def _build_trade_context(trades: list[DiyTradeDB]) -> str | None:
+    """Build a concise summary of trades for LLM context."""
+    if not trades:
+        return None
+
+    stats = _analyze_trades(trades)
+    rules = _extract_rules(trades)
+
+    # Build symbol breakdown
+    symbols: dict[str, int] = {}
+    for t in trades:
+        symbols[t.symbol] = symbols.get(t.symbol, 0) + 1
+
+    # Time range
+    filled_dates = [t.filled_at for t in trades if t.filled_at]
+    time_range = ""
+    if filled_dates:
+        earliest = min(filled_dates).strftime("%Y-%m-%d")
+        latest = max(filled_dates).strftime("%Y-%m-%d")
+        time_range = f"Period: {earliest} ~ {latest}"
+
+    lines = [
+        f"Total trades: {stats['total_trades']} (Buy: {stats['buy_count']}, Sell: {stats['sell_count']})",
+        f"Win rate: {stats['win_rate']}% ({stats['win_count']}W / {stats['loss_count']}L)",
+        f"Total PnL: {stats['total_pnl']}, Avg PnL: {stats['avg_pnl']}",
+        f"Max win: {stats['max_win']}, Max loss: {stats['max_loss']}",
+        f"Avg position size: {stats['avg_qty']}, Avg price: {stats['avg_price']}",
+        f"Symbols: {', '.join(f'{s}({c})' for s, c in sorted(symbols.items(), key=lambda x: -x[1]))}",
+    ]
+    if time_range:
+        lines.append(time_range)
+
+    # Add rationales if any
+    rationales = [t.rationale for t in trades if t.rationale]
+    if rationales:
+        lines.append(f"\nUser's trade rationales (sample):")
+        for r in rationales[:10]:
+            lines.append(f"  - {r}")
+
+    # Add tags
+    all_tags: dict[str, int] = {}
+    for t in trades:
+        for tag in t.tags:
+            all_tags[tag] = all_tags.get(tag, 0) + 1
+    if all_tags:
+        top_tags = sorted(all_tags.items(), key=lambda x: -x[1])[:10]
+        lines.append(f"Common tags: {', '.join(f'{tag}({cnt})' for tag, cnt in top_tags)}")
+
+    # Add individual trade details (up to 30)
+    lines.append(f"\nRecent trades (up to 30):")
+    lines.append("symbol | side | qty | price | pnl | leverage | time")
+    for t in trades[:30]:
+        price = f"{t.avg_price}" if t.avg_price else "-"
+        pnl = f"{t.pnl}" if t.pnl else "-"
+        time = t.filled_at.strftime("%m-%d %H:%M") if t.filled_at else "-"
+        lines.append(f"{t.symbol} | {t.side} | {t.qty} | {price} | {pnl} | {t.leverage}x | {time}")
+
+    return "\n".join(lines)
+
+
 @router.post("/signatures/chat/new")
 async def start_signature_chat(
     request: Request,
@@ -233,6 +293,16 @@ async def start_signature_chat(
 
     signature_repo = _get_signature_repo(request)
 
+    # Load dataset trades for LLM context
+    trade_context = None
+    if body.dataset_id:
+        dataset_repo = request.app.state.dataset_repo
+        diy_trade_repo = _get_diy_trade_repo(request)
+        ds = dataset_repo.get(body.dataset_id)
+        if ds and ds.trade_ids:
+            trades = diy_trade_repo.get_by_ids(ds.trade_ids)
+            trade_context = _build_trade_context(trades)
+
     try:
         reply, strategy_config, rules = await chat_refine_strategy(
             user_message=body.message,
@@ -240,6 +310,7 @@ async def start_signature_chat(
             current_rules=[],
             messages=[],
             api_key=settings.gemini_api_key,
+            trade_context=trade_context,
         )
     except Exception as e:
         logger.exception("LLM chat failed")
@@ -290,6 +361,16 @@ async def chat_with_signature(
     if not sig:
         raise HTTPException(status_code=404, detail="Signature not found")
 
+    # Load dataset trades for LLM context
+    trade_context = None
+    if sig.dataset_id:
+        dataset_repo = request.app.state.dataset_repo
+        diy_trade_repo = _get_diy_trade_repo(request)
+        ds = dataset_repo.get(sig.dataset_id)
+        if ds and ds.trade_ids:
+            trades = diy_trade_repo.get_by_ids(ds.trade_ids)
+            trade_context = _build_trade_context(trades)
+
     try:
         reply, strategy_config, rules = await chat_refine_strategy(
             user_message=body.message,
@@ -297,6 +378,7 @@ async def chat_with_signature(
             current_rules=sig.rules,
             messages=sig.messages,
             api_key=settings.gemini_api_key,
+            trade_context=trade_context,
         )
     except Exception as e:
         logger.exception("LLM chat failed")

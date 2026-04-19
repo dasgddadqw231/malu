@@ -13,12 +13,14 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
 } from "lucide-react";
+import { BootSound } from "@/components/click-effects";
 
 export default function BacktestPageClient() {
   return (
     <Suspense
       fallback={
         <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+          <BootSound />
           <div className="arc-spinner" />
           <p className="text-sm font-mono text-jarvis/60 tracking-widest uppercase">
             Loading Backtest Results...
@@ -120,6 +122,7 @@ function BacktestContent() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <BootSound />
         <div className="arc-spinner" />
         <p className="text-sm font-mono text-jarvis/60 tracking-widest uppercase">
           Loading Backtest Results...

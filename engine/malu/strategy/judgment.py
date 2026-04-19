@@ -1,17 +1,83 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 
 from malu.exchange.bybit_client import BybitClient
 from malu.exchange.models import Category
 from malu.strategy.base import JudgmentModule, JudgmentResult, Signal
+from malu.strategy import indicators as ind
 from malu.utils.logger import get_logger
 
 log = get_logger("judgment")
 
 
+def _get_candles_from_store(market_data, symbol: str, interval: str, limit: int) -> list | None:
+    """Try to get kline history from MarketDataStore ring buffer."""
+    if market_data is None:
+        return None
+    get_history = getattr(market_data, "get_kline_history", None)
+    if get_history is None:
+        return None
+    bars = get_history(symbol, interval, limit)
+    if not bars or len(bars) < limit:
+        return None
+    return bars
+
+
+async def _fetch_candles_rest(client: BybitClient, symbol: str, interval: str, limit: int):
+    """Fallback: fetch candles via REST API."""
+    klines = await asyncio.to_thread(
+        client._client.get_kline,
+        category="linear",
+        symbol=symbol,
+        interval=interval,
+        limit=limit,
+    )
+    candles = klines["result"]["list"]
+    return list(reversed(candles))  # oldest first
+
+
+def _extract_ohlcv(candles, from_store: bool):
+    """Extract OHLCV lists from candles (either KlineBar objects or raw API lists)."""
+    if from_store:
+        opens = [c.open for c in candles]
+        highs = [c.high for c in candles]
+        lows = [c.low for c in candles]
+        closes = [c.close for c in candles]
+        volumes = [c.volume for c in candles]
+    else:
+        opens = [Decimal(c[1]) for c in candles]
+        highs = [Decimal(c[2]) for c in candles]
+        lows = [Decimal(c[3]) for c in candles]
+        closes = [Decimal(c[4]) for c in candles]
+        volumes = [Decimal(c[5]) for c in candles]
+    return opens, highs, lows, closes, volumes
+
+
+async def _get_ohlcv(symbol: str, client: BybitClient, market_data, interval: str, limit: int):
+    """Get OHLCV data, preferring store, falling back to REST."""
+    bars = _get_candles_from_store(market_data, symbol, interval, limit)
+    if bars:
+        o, h, l, c, v = _extract_ohlcv(bars, from_store=True)
+        # Override last close with real-time price
+        if market_data:
+            last_price = market_data.get_last_price(symbol)
+            if last_price and c:
+                c[-1] = last_price
+        return o, h, l, c, v
+
+    candles = await _fetch_candles_rest(client, symbol, interval, limit)
+    o, h, l, c, v = _extract_ohlcv(candles, from_store=False)
+    if market_data:
+        last_price = market_data.get_last_price(symbol)
+        if last_price and c:
+            c[-1] = last_price
+    return o, h, l, c, v
+
+
 class BBRSIJudgment(JudgmentModule):
-    """Bollinger Band + RSI based judgment.
+    """Bollinger Band + RSI mean reversion (bb_reversal).
 
     Params:
         bb_period: int (default 20)
@@ -19,22 +85,19 @@ class BBRSIJudgment(JudgmentModule):
         rsi_period: int (default 14)
         rsi_oversold: float (default 30)
         rsi_overbought: float (default 70)
+        interval: str (default "15")
     """
 
     def evaluate_from_candles(self, closes: list[Decimal]) -> JudgmentResult:
-        """Run BB+RSI judgment on a list of close prices (oldest-first).
-
-        Pure calculation with no I/O — used by both live evaluate() and backtesting.
-        """
         if len(closes) < 14:
             return JudgmentResult(signal=Signal.HOLD, reason="insufficient data")
 
         rsi_period = self.params.get("rsi_period", 14)
-        rsi = self._calc_rsi(closes, rsi_period)
+        rsi = ind.calc_rsi(closes, rsi_period)
 
         bb_period = self.params.get("bb_period", 20)
-        bb_std = Decimal(str(self.params.get("bb_std", 2.0)))
-        upper, lower = self._calc_bb(closes, bb_period, bb_std)
+        bb_std = self.params.get("bb_std", 2.0)
+        upper, middle, lower = ind.calc_bb(closes, bb_period, bb_std)
 
         current_price = closes[-1]
         oversold = self.params.get("rsi_oversold", 30)
@@ -56,44 +119,243 @@ class BBRSIJudgment(JudgmentModule):
         return JudgmentResult(signal=Signal.HOLD, reason=f"RSI={rsi:.1f}, no signal")
 
     async def evaluate(self, symbol: str, client: BybitClient, market_data=None) -> JudgmentResult:
-        import asyncio
-
-        klines = await asyncio.to_thread(
-            client._client.get_kline,
-            category="linear",
-            symbol=symbol,
-            interval="15",
-            limit=self.params.get("bb_period", 20) + 5,
-        )
-        candles = klines["result"]["list"]
-        closes = [Decimal(c[4]) for c in reversed(candles)]  # oldest first
-
-        # Use real-time price from WebSocket if available
-        if market_data:
-            last_price = market_data.get_last_price(symbol)
-            if last_price and closes:
-                closes[-1] = last_price
-
+        interval = self.params.get("interval", "15")
+        limit = self.params.get("bb_period", 20) + 5
+        _, _, _, closes, _ = await _get_ohlcv(symbol, client, market_data, interval, limit)
         return self.evaluate_from_candles(closes)
 
-    @staticmethod
-    def _calc_rsi(closes: list[Decimal], period: int) -> float:
-        deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
-        gains = [max(d, Decimal("0")) for d in deltas[-period:]]
-        losses = [abs(min(d, Decimal("0"))) for d in deltas[-period:]]
-        avg_gain = sum(gains) / period
-        avg_loss = sum(losses) / period
-        if avg_loss == 0:
-            return 100.0
-        rs = float(avg_gain / avg_loss)
-        return 100.0 - (100.0 / (1.0 + rs))
 
-    @staticmethod
-    def _calc_bb(
-        closes: list[Decimal], period: int, num_std: Decimal
-    ) -> tuple[Decimal, Decimal]:
-        window = closes[-period:]
-        mean = sum(window) / period
-        variance = sum((x - mean) ** 2 for x in window) / period
-        std = variance ** Decimal("0.5")
-        return mean + num_std * std, mean - num_std * std
+class BBSqueezeJudgment(JudgmentModule):
+    """Bollinger Band Squeeze Breakout (bb_squeeze).
+
+    Enters when BB width contracts to extreme low, then price breaks out with volume.
+
+    Params:
+        bb_period: int (default 20)
+        bb_std: float (default 2.0)
+        squeeze_lookback: int (default 48)
+        squeeze_percentile: float (default 20, bottom N%)
+        volume_multiple: float (default 1.5)
+        interval: str (default "15")
+    """
+
+    async def evaluate(self, symbol: str, client: BybitClient, market_data=None) -> JudgmentResult:
+        interval = self.params.get("interval", "15")
+        lookback = self.params.get("squeeze_lookback", 48)
+        bb_period = self.params.get("bb_period", 20)
+        limit = max(lookback, bb_period) + 10
+
+        _, _, _, closes, volumes = await _get_ohlcv(symbol, client, market_data, interval, limit)
+
+        if len(closes) < lookback:
+            return JudgmentResult(signal=Signal.HOLD, reason="insufficient data")
+
+        bb_std = self.params.get("bb_std", 2.0)
+        vol_mult = self.params.get("volume_multiple", 1.5)
+        sq_pct = self.params.get("squeeze_percentile", 20)
+
+        # Calculate BandWidth history
+        widths = []
+        for i in range(bb_period, len(closes) + 1):
+            w = ind.calc_bb_width(closes[:i], bb_period, bb_std)
+            widths.append(w)
+
+        if len(widths) < 2:
+            return JudgmentResult(signal=Signal.HOLD, reason="not enough width data")
+
+        # Check squeeze: current width in bottom N% of recent history
+        recent_widths = sorted(widths[-lookback:])
+        threshold_idx = max(1, int(len(recent_widths) * sq_pct / 100))
+        squeeze_threshold = recent_widths[threshold_idx - 1]
+
+        prev_width = widths[-2]
+        curr_width = widths[-1]
+
+        # Was in squeeze, now expanding
+        in_squeeze = prev_width <= squeeze_threshold
+        expanding = curr_width > prev_width
+
+        if not (in_squeeze and expanding):
+            return JudgmentResult(signal=Signal.HOLD, reason=f"no squeeze breakout, width={float(curr_width):.4f}")
+
+        # Volume confirmation
+        avg_vol = ind.calc_sma(volumes, 20)
+        vol_ok = volumes[-1] >= avg_vol * Decimal(str(vol_mult)) if avg_vol > 0 else False
+
+        if not vol_ok:
+            return JudgmentResult(signal=Signal.HOLD, reason="squeeze breakout but low volume")
+
+        # Direction: which band did price break?
+        upper, middle, lower = ind.calc_bb(closes, bb_period, bb_std)
+        price = closes[-1]
+
+        if price > upper:
+            return JudgmentResult(signal=Signal.LONG, confidence=0.7, reason=f"BB squeeze breakout UP, width={float(curr_width):.4f}")
+        elif price < lower:
+            return JudgmentResult(signal=Signal.SHORT, confidence=0.7, reason=f"BB squeeze breakout DOWN, width={float(curr_width):.4f}")
+
+        return JudgmentResult(signal=Signal.HOLD, reason="squeeze expanding but price inside bands")
+
+
+class EMACrossJudgment(JudgmentModule):
+    """EMA Crossover trend following (ema_cross).
+
+    Params:
+        fast_period: int (default 9)
+        slow_period: int (default 21)
+        trend_ema: int (default 200, 0 to disable)
+        require_trend: bool (default True)
+        interval: str (default "15")
+    """
+
+    async def evaluate(self, symbol: str, client: BybitClient, market_data=None) -> JudgmentResult:
+        interval = self.params.get("interval", "15")
+        trend_ema_period = self.params.get("trend_ema", 200)
+        slow = self.params.get("slow_period", 21)
+        limit = max(slow, trend_ema_period if trend_ema_period else slow) + 10
+
+        _, _, _, closes, _ = await _get_ohlcv(symbol, client, market_data, interval, limit)
+
+        if len(closes) < slow + 2:
+            return JudgmentResult(signal=Signal.HOLD, reason="insufficient data")
+
+        fast = self.params.get("fast_period", 9)
+        require_trend = self.params.get("require_trend", True)
+
+        direction, just_crossed = ind.detect_ema_cross(closes, fast, slow)
+
+        if not just_crossed:
+            return JudgmentResult(signal=Signal.HOLD, reason=f"EMA {fast}/{slow} no cross, trend={direction}")
+
+        # Trend filter
+        if require_trend and trend_ema_period and len(closes) >= trend_ema_period + 1:
+            trend_ema = ind.calc_ema(closes, trend_ema_period)
+            price = closes[-1]
+            if direction == "long" and price < trend_ema[-1]:
+                return JudgmentResult(signal=Signal.HOLD, reason=f"EMA cross long but below {trend_ema_period} EMA")
+            elif direction == "short" and price > trend_ema[-1]:
+                return JudgmentResult(signal=Signal.HOLD, reason=f"EMA cross short but above {trend_ema_period} EMA")
+
+        signal = Signal.LONG if direction == "long" else Signal.SHORT
+        return JudgmentResult(signal=signal, confidence=0.6, reason=f"EMA {fast}/{slow} cross {direction}")
+
+
+class MACDCrossJudgment(JudgmentModule):
+    """MACD Crossover (macd_cross).
+
+    Params:
+        fast_ema: int (default 12)
+        slow_ema: int (default 26)
+        signal_period: int (default 9)
+        require_zero_cross: bool (default False)
+        interval: str (default "15")
+    """
+
+    async def evaluate(self, symbol: str, client: BybitClient, market_data=None) -> JudgmentResult:
+        interval = self.params.get("interval", "15")
+        slow = self.params.get("slow_ema", 26)
+        sig = self.params.get("signal_period", 9)
+        limit = slow + sig + 15
+
+        _, _, _, closes, _ = await _get_ohlcv(symbol, client, market_data, interval, limit)
+
+        if len(closes) < slow + sig:
+            return JudgmentResult(signal=Signal.HOLD, reason="insufficient data for MACD")
+
+        fast = self.params.get("fast_ema", 12)
+        require_zero = self.params.get("require_zero_cross", False)
+
+        # Current MACD
+        macd_val, signal_val, hist = ind.calc_macd(closes, fast, slow, sig)
+        # Previous MACD (exclude last bar)
+        prev_macd, prev_signal, prev_hist = ind.calc_macd(closes[:-1], fast, slow, sig)
+
+        # Detect crossover
+        curr_diff = macd_val - signal_val
+        prev_diff = prev_macd - prev_signal
+
+        if curr_diff > 0 and prev_diff <= 0:
+            # Bullish cross
+            if require_zero and macd_val > 0:
+                return JudgmentResult(signal=Signal.HOLD, reason="MACD bullish cross but above zero line")
+            strength = "strong" if macd_val < 0 else "normal"
+            return JudgmentResult(signal=Signal.LONG, confidence=0.6, reason=f"MACD bullish cross ({strength})")
+        elif curr_diff < 0 and prev_diff >= 0:
+            # Bearish cross
+            if require_zero and macd_val < 0:
+                return JudgmentResult(signal=Signal.HOLD, reason="MACD bearish cross but below zero line")
+            strength = "strong" if macd_val > 0 else "normal"
+            return JudgmentResult(signal=Signal.SHORT, confidence=0.6, reason=f"MACD bearish cross ({strength})")
+
+        return JudgmentResult(signal=Signal.HOLD, reason=f"MACD no cross, hist={float(hist):.4f}")
+
+
+class RSIDivergenceJudgment(JudgmentModule):
+    """RSI Divergence reversal detection (rsi_divergence).
+
+    Params:
+        rsi_period: int (default 14)
+        lookback: int (default 20)
+        min_bars_between: int (default 5)
+        confirmation: bool (default True)
+        interval: str (default "15")
+    """
+
+    async def evaluate(self, symbol: str, client: BybitClient, market_data=None) -> JudgmentResult:
+        interval = self.params.get("interval", "15")
+        lookback = self.params.get("lookback", 20)
+        rsi_period = self.params.get("rsi_period", 14)
+        limit = lookback + rsi_period + 10
+
+        _, _, _, closes, _ = await _get_ohlcv(symbol, client, market_data, interval, limit)
+
+        if len(closes) < lookback + rsi_period:
+            return JudgmentResult(signal=Signal.HOLD, reason="insufficient data")
+
+        min_bars = self.params.get("min_bars_between", 5)
+        confirmation = self.params.get("confirmation", True)
+
+        # Calculate RSI for each point in lookback window
+        rsi_values = []
+        for i in range(lookback):
+            end_idx = len(closes) - lookback + i + 1
+            rsi_val = ind.calc_rsi(closes[:end_idx], rsi_period)
+            rsi_values.append(rsi_val)
+
+        price_window = closes[-lookback:]
+
+        # Find local minima/maxima in price
+        def find_pivots(series, find_min=True):
+            pivots = []
+            for i in range(1, len(series) - 1):
+                if find_min and series[i] <= series[i - 1] and series[i] <= series[i + 1]:
+                    pivots.append(i)
+                elif not find_min and series[i] >= series[i - 1] and series[i] >= series[i + 1]:
+                    pivots.append(i)
+            return pivots
+
+        # Bullish divergence: price lower low, RSI higher low
+        lows = find_pivots(price_window, find_min=True)
+        if len(lows) >= 2:
+            for i in range(len(lows) - 1):
+                idx1, idx2 = lows[i], lows[-1]
+                if idx2 - idx1 >= min_bars:
+                    if price_window[idx2] < price_window[idx1] and rsi_values[idx2] > rsi_values[idx1]:
+                        current_rsi = rsi_values[-1]
+                        if confirmation and current_rsi < 30:
+                            return JudgmentResult(signal=Signal.HOLD, reason="bullish div but RSI not confirmed above 30")
+                        return JudgmentResult(signal=Signal.LONG, confidence=0.65, reason=f"bullish RSI divergence, RSI={current_rsi:.1f}")
+
+        # Bearish divergence: price higher high, RSI lower high
+        highs = find_pivots(price_window, find_min=False)
+        if len(highs) >= 2:
+            for i in range(len(highs) - 1):
+                idx1, idx2 = highs[i], highs[-1]
+                if idx2 - idx1 >= min_bars:
+                    if price_window[idx2] > price_window[idx1] and rsi_values[idx2] < rsi_values[idx1]:
+                        current_rsi = rsi_values[-1]
+                        if confirmation and current_rsi > 70:
+                            return JudgmentResult(signal=Signal.HOLD, reason="bearish div but RSI not confirmed below 70")
+                        return JudgmentResult(signal=Signal.SHORT, confidence=0.65, reason=f"bearish RSI divergence, RSI={current_rsi:.1f}")
+
+        return JudgmentResult(signal=Signal.HOLD, reason="no divergence detected")

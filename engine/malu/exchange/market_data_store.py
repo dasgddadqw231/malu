@@ -63,14 +63,15 @@ class MarketDataStore:
     Reads come from asyncio tasks (bot cycles, strategies).
     """
 
-    def __init__(self, trade_buffer_size: int = 200):
+    def __init__(self, trade_buffer_size: int = 200, kline_buffer_size: int = 200):
         self._lock = threading.Lock()
         self._trade_buffer_size = trade_buffer_size
+        self._kline_buffer_size = kline_buffer_size
 
         self._tickers: dict[str, TickerData] = {}
         self._orderbooks: dict[str, OrderbookData] = {}
         self._trades: dict[str, deque] = {}
-        self._klines: dict[str, dict[str, KlineBar]] = {}  # {symbol: {interval: bar}}
+        self._klines: dict[str, dict[str, deque[KlineBar]]] = {}  # {symbol: {interval: deque[bar]}}
 
     # ── Write methods (called from pybit thread) ──
 
@@ -129,6 +130,10 @@ class MarketDataStore:
         with self._lock:
             if symbol not in self._klines:
                 self._klines[symbol] = {}
+            if interval not in self._klines[symbol]:
+                self._klines[symbol][interval] = deque(maxlen=self._kline_buffer_size)
+
+            buf = self._klines[symbol][interval]
             for bar_data in data:
                 bar = KlineBar(
                     timestamp=int(bar_data["start"]),
@@ -140,7 +145,12 @@ class MarketDataStore:
                     turnover=Decimal(bar_data["turnover"]),
                     confirmed=bar_data.get("confirm", False),
                 )
-                self._klines[symbol][interval] = bar
+                # If the deque already has a bar with the same timestamp, replace it
+                # (in-progress bar update). Otherwise append a new bar.
+                if buf and buf[-1].timestamp == bar.timestamp:
+                    buf[-1] = bar
+                else:
+                    buf.append(bar)
 
     # ── Read methods (called from asyncio tasks) ──
 
@@ -174,11 +184,29 @@ class MarketDataStore:
 
     def get_latest_kline(self, symbol: str, interval: str) -> KlineBar | None:
         with self._lock:
-            klines = self._klines.get(symbol, {})
-            bar = klines.get(interval)
-            if bar:
+            buf = self._klines.get(symbol, {}).get(interval)
+            if buf:
+                bar = buf[-1]
                 return KlineBar(**bar.__dict__)
             return None
+
+    def get_kline_history(self, symbol: str, interval: str, limit: int = 200) -> list[KlineBar]:
+        """Return a copy of the last ``limit`` kline bars, oldest first.
+
+        Only confirmed bars are included; an in-progress (unconfirmed) bar at
+        the tail of the deque is excluded so callers always receive complete
+        bars suitable for strategy calculations.
+        """
+        with self._lock:
+            buf = self._klines.get(symbol, {}).get(interval)
+            if not buf:
+                return []
+            # Exclude the last bar if it is still in-progress (unconfirmed).
+            bars = list(buf)
+            if bars and not bars[-1].confirmed:
+                bars = bars[:-1]
+            # Return a shallow copy of each bar to protect internal state.
+            return [KlineBar(**b.__dict__) for b in bars[-limit:]]
 
     def get_last_price(self, symbol: str) -> Decimal | None:
         with self._lock:

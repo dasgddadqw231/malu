@@ -76,3 +76,37 @@ class DefenseModule(ABC):
     @abstractmethod
     async def check(self, position: PositionInfo | None, client: object, market_data: object | None = None) -> DefenseResult:
         ...
+
+
+@dataclass
+class FilterResult:
+    allowed: bool = True
+    reason: str = ""
+
+
+@dataclass
+class SizingResult:
+    trade_amount: Decimal = Decimal("0")
+    reason: str = ""
+
+
+class FilterModule(ABC):
+    """Checks market conditions before entry."""
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    @abstractmethod
+    async def check(self, symbol: str, signal: Signal, client: object, market_data: object | None = None) -> FilterResult:
+        ...
+
+
+class SizingModule(ABC):
+    """Calculates position size."""
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    @abstractmethod
+    async def calculate(self, symbol: str, available_budget: Decimal, signal: Signal, client: object, market_data: object | None = None) -> SizingResult:
+        ...

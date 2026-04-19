@@ -18,6 +18,7 @@ import {
   ArrowRightIcon,
   PencilIcon,
 } from "lucide-react";
+import { BootSound } from "@/components/click-effects";
 
 function RuleIcon({ type }: { type: string }) {
   switch (type) {
@@ -119,6 +120,7 @@ export default function EditSignaturePage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <BootSound />
         <div className="arc-spinner" />
         <p className="text-sm font-mono text-jarvis/60 tracking-widest uppercase">Loading Signature...</p>
       </div>

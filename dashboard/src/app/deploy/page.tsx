@@ -149,15 +149,15 @@ export default function DeployPage() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-10">
+      <div className="flex items-center gap-4 mb-10 jarvis-boot jarvis-boot-1">
         <Link
           href="/"
-          className="flex items-center justify-center w-9 h-9 rounded-lg border border-jarvis/15 text-jarvis/50 hover:text-jarvis hover:border-jarvis/30 transition-all"
+          className="flex items-center justify-center w-9 h-9 rounded-lg border border-jarvis/15 text-jarvis/50 hover:text-jarvis hover:border-jarvis/30 transition-all jarvis-nav-link"
         >
           <ArrowLeftIcon className="size-4" />
         </Link>
         <div>
-          <h1 className="text-xl font-bold tracking-[0.15em] font-mono text-jarvis text-glow">
+          <h1 className="text-xl font-bold tracking-[0.15em] font-mono text-jarvis text-glow jarvis-text-reveal">
             DEPLOY NEW BOT
           </h1>
           <p className="text-xs font-mono text-muted-foreground tracking-[0.15em] uppercase">

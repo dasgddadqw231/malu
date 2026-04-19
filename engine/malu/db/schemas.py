@@ -15,6 +15,7 @@ class BotInstanceDB(BaseModel):
     symbol: str
     category: str = "linear"
     seed_budget: Decimal
+    leverage: int = 1
     strategy_config: dict = {}
     bot_controls: dict = {}
     cycle_interval: float = 5.0
@@ -46,6 +47,7 @@ class BotCreateRequest(BaseModel):
     symbol: str
     category: str = "linear"
     seed_budget: Decimal
+    leverage: int = 1
     strategy_config: dict = {}
     bot_controls: dict = {}
     cycle_interval: float = 5.0
@@ -55,6 +57,7 @@ class BotCreateRequest(BaseModel):
 class BotUpdateRequest(BaseModel):
     name: str | None = None
     seed_budget: Decimal | None = None
+    leverage: int | None = None
     strategy_config: dict | None = None
     bot_controls: dict | None = None
     cycle_interval: float | None = None
@@ -204,6 +207,7 @@ class BacktestRunRequest(BaseModel):
     start_date: str  # YYYY-MM-DD
     end_date: str    # YYYY-MM-DD
     initial_capital: Decimal = Decimal("10000")
+    leverage: int = 1
     strategy_config: dict = {}
     slippage_bps: int = 5
     fee_rate: Decimal = Decimal("0.00055")

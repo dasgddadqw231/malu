@@ -16,9 +16,13 @@ from malu.strategy.base import (
     ActionModule,
     DefenseModule,
     DefenseResult,
+    FilterModule,
+    FilterResult,
     JudgmentModule,
     JudgmentResult,
     Signal,
+    SizingModule,
+    SizingResult,
 )
 from malu.utils.logger import get_logger
 
@@ -41,16 +45,39 @@ class BotStatus(StrEnum):
 JUDGMENT_REGISTRY: dict[str, type[JudgmentModule]] = {}
 ACTION_REGISTRY: dict[str, type[ActionModule]] = {}
 DEFENSE_REGISTRY: dict[str, type[DefenseModule]] = {}
+FILTER_REGISTRY: dict[str, type[FilterModule]] = {}
+SIZING_REGISTRY: dict[str, type[SizingModule]] = {}
 
 
 def _populate_registries():
-    from malu.strategy.judgment import BBRSIJudgment
+    from malu.strategy.judgment import BBRSIJudgment, BBSqueezeJudgment, EMACrossJudgment, MACDCrossJudgment, RSIDivergenceJudgment
     from malu.strategy.action import MarketOrderAction
-    from malu.strategy.defense import TrailingStopDefense
+    from malu.strategy.defense import FixedPctDefense, TrailingStopDefense, ATRStopDefense, TrailingATRDefense, TimeStopDefense
+    from malu.strategy.filters import TrendFilter, RegimeFilter, VolatilityFilter
+    from malu.strategy.sizing import FixedFractionSizing, RiskBasedSizing, VolatilityAdjustedSizing
 
     JUDGMENT_REGISTRY["bb_rsi"] = BBRSIJudgment
+    JUDGMENT_REGISTRY["bb_reversal"] = BBRSIJudgment  # alias
+    JUDGMENT_REGISTRY["bb_squeeze"] = BBSqueezeJudgment
+    JUDGMENT_REGISTRY["ema_cross"] = EMACrossJudgment
+    JUDGMENT_REGISTRY["macd_cross"] = MACDCrossJudgment
+    JUDGMENT_REGISTRY["rsi_divergence"] = RSIDivergenceJudgment
+
     ACTION_REGISTRY["market_order"] = MarketOrderAction
-    DEFENSE_REGISTRY["trailing_stop"] = TrailingStopDefense
+
+    DEFENSE_REGISTRY["trailing_stop"] = FixedPctDefense  # backward compat
+    DEFENSE_REGISTRY["fixed_pct"] = FixedPctDefense
+    DEFENSE_REGISTRY["atr_stop"] = ATRStopDefense
+    DEFENSE_REGISTRY["trailing_atr"] = TrailingATRDefense
+    DEFENSE_REGISTRY["time_stop"] = TimeStopDefense
+
+    FILTER_REGISTRY["trend_filter"] = TrendFilter
+    FILTER_REGISTRY["regime_filter"] = RegimeFilter
+    FILTER_REGISTRY["volatility_filter"] = VolatilityFilter
+
+    SIZING_REGISTRY["fixed_fraction"] = FixedFractionSizing
+    SIZING_REGISTRY["risk_based"] = RiskBasedSizing
+    SIZING_REGISTRY["volatility_adjusted"] = VolatilityAdjustedSizing
 
 
 _populate_registries()
@@ -64,6 +91,7 @@ class BotConfig:
     symbol: str
     category: Category = Category.LINEAR
     seed_budget: Decimal = Decimal("0")
+    leverage: int = 1
     strategy_config: dict = field(default_factory=dict)
     cycle_interval: float = 5.0
     bot_controls: dict = field(default_factory=dict)
@@ -112,6 +140,21 @@ class Bot:
         self.action = ACTION_REGISTRY[a_cfg["module"]](a_cfg.get("params", {}))
         self.defense = DEFENSE_REGISTRY[d_cfg["module"]](d_cfg.get("params", {}))
 
+        # Load filter modules (optional, can be a list)
+        filters_cfg = sc.get("filters", [])
+        self.filters: list[FilterModule] = []
+        for f_cfg in filters_cfg:
+            module_name = f_cfg.get("module", "")
+            if module_name in FILTER_REGISTRY:
+                self.filters.append(FILTER_REGISTRY[module_name](f_cfg.get("params", {})))
+
+        # Load sizing module (optional, defaults to using action's size_pct)
+        s_cfg = sc.get("sizing")
+        self.sizing: SizingModule | None = None
+        if s_cfg and s_cfg.get("module") in SIZING_REGISTRY:
+            sizing_params = {**s_cfg.get("params", {}), "leverage": config.leverage}
+            self.sizing = SIZING_REGISTRY[s_cfg["module"]](sizing_params)
+
     @property
     def bot_id(self) -> str:
         return self.config.bot_id
@@ -126,10 +169,23 @@ class Bot:
             return
 
         await self.budget_ledger.register_bot(self.bot_id, self.config.seed_budget)
+
+        # Set leverage on exchange before trading
+        if self.config.leverage >= 1:
+            try:
+                await self.rate_limiter.acquire("order")
+                await self.client.set_leverage(
+                    Category(self.config.category),
+                    self.config.symbol,
+                    self.config.leverage,
+                )
+            except Exception as e:
+                log.error("set_leverage_failed", bot_id=self.bot_id, error=str(e))
+
         self.status = BotStatus.RUNNING
         self._task = asyncio.create_task(self._run_loop(), name=f"bot-{self.bot_id}")
-        await self._emit("started", {})
-        log.info("bot_started", bot_id=self.bot_id, name=self.name)
+        await self._emit("started", {"leverage": self.config.leverage})
+        log.info("bot_started", bot_id=self.bot_id, name=self.name, leverage=self.config.leverage)
 
     async def stop(self) -> None:
         """Graceful stop: finish current cycle, then stop."""
@@ -209,6 +265,40 @@ class Bot:
             self.status = BotStatus.DEFENDING
             await self._emit("status", {"phase": "defending"})
 
+            # 2.0 Liquidation proximity guard (non-optional safety)
+            if current_position.liq_price > 0 and self.config.leverage > 1:
+                current_price = current_position.entry_price
+                if self.market_data:
+                    ticker = self.market_data.get_ticker(current_position.symbol)
+                    if ticker and ticker.mark_price > 0:
+                        current_price = ticker.mark_price
+
+                if current_position.side == Side.BUY:
+                    liq_dist_pct = (current_price - current_position.liq_price) / current_price * 100
+                else:
+                    liq_dist_pct = (current_position.liq_price - current_price) / current_price * 100
+
+                if liq_dist_pct < Decimal("2"):
+                    log.warning("liquidation_close", bot_id=self.bot_id,
+                                liq_price=str(current_position.liq_price),
+                                current_price=str(current_price),
+                                distance_pct=str(liq_dist_pct))
+                    await self.rate_limiter.acquire("order")
+                    await self.client.close_position(
+                        Category(self.config.category),
+                        current_position.symbol,
+                        current_position.side,
+                        current_position.size,
+                    )
+                    pnl = current_position.unrealised_pnl or Decimal("0")
+                    self.guard.record_close(pnl)
+                    await self._emit("liquidation_guard", {
+                        "reason": f"liquidation proximity: {liq_dist_pct:.2f}% from liq price",
+                        "liq_price": str(current_position.liq_price),
+                        "pnl": str(pnl),
+                    })
+                    return
+
             defense_result: DefenseResult = await self.defense.check(
                 current_position, self.client, market_data=self.market_data
             )
@@ -255,6 +345,20 @@ class Bot:
             await self._emit("status", {"phase": "waiting", "reason": judgment.reason})
             return
 
+        # 4.5 Filter checks
+        for f in self.filters:
+            try:
+                filter_result: FilterResult = await f.check(
+                    self.config.symbol, judgment.signal, self.client, market_data=self.market_data
+                )
+                if not filter_result.allowed:
+                    self.status = BotStatus.WAITING
+                    await self._emit("status", {"phase": "filtered", "reason": filter_result.reason})
+                    log.info("filter_blocked", bot_id=self.bot_id, reason=filter_result.reason)
+                    return
+            except Exception as e:
+                log.warning("filter_error", bot_id=self.bot_id, error=str(e))
+
         # 5. Action (with sizing override from guard)
         self.status = BotStatus.ACTING
         await self._emit("status", {"phase": "acting", "signal": judgment.signal})
@@ -265,8 +369,14 @@ class Bot:
             return
 
         # Apply sizing controls
-        strategy_size_pct = self.action.params.get("size_pct", 0.5)
-        trade_amount = self.guard.compute_trade_size(available, strategy_size_pct)
+        if self.sizing:
+            sizing_result: SizingResult = await self.sizing.calculate(
+                self.config.symbol, available, judgment.signal, self.client, market_data=self.market_data
+            )
+            trade_amount = min(sizing_result.trade_amount, available)
+        else:
+            strategy_size_pct = self.action.params.get("size_pct", 0.5)
+            trade_amount = self.guard.compute_trade_size(available, strategy_size_pct)
         if trade_amount <= 0:
             log.warning("guard_zero_size", bot_id=self.bot_id)
             return

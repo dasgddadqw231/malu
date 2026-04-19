@@ -30,6 +30,7 @@ import {
   FolderPlusIcon,
   DatabaseIcon,
 } from "lucide-react";
+import { BootSound } from "@/components/click-effects";
 
 export default function TradesPage() {
   const router = useRouter();
@@ -133,6 +134,7 @@ export default function TradesPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <BootSound />
         <div className="arc-spinner" />
         <p className="text-sm font-mono text-jarvis/60 tracking-widest uppercase">
           Loading Trade History...
@@ -144,16 +146,16 @@ export default function TradesPage() {
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
       {/* Header */}
-      <header className="flex items-end justify-between mb-8">
+      <header className="flex items-end justify-between mb-8 jarvis-boot jarvis-boot-1">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <Link href="/" className="text-jarvis/50 hover:text-jarvis transition-colors">
+            <Link href="/" className="text-jarvis/50 hover:text-jarvis transition-colors jarvis-nav-link">
               <ArrowLeftIcon className="size-5" />
             </Link>
-            <h1 className="text-3xl font-bold tracking-[0.2em] font-mono text-jarvis text-glow">
+            <h1 className="text-3xl font-bold tracking-[0.2em] font-mono text-jarvis text-glow jarvis-text-reveal">
               TRADES
             </h1>
-            <div className="h-[1px] w-16 bg-gradient-to-r from-jarvis/60 to-transparent" />
+            <div className="h-[1px] w-16 bg-gradient-to-r from-jarvis/60 to-transparent jarvis-divider" />
           </div>
           <p className="text-xs font-mono text-muted-foreground tracking-[0.15em] uppercase">
             Your manual trade history from Bybit
@@ -346,7 +348,7 @@ export default function TradesPage() {
                 return (
                   <TableRow
                     key={trade.id}
-                    className={`border-jarvis/5 ${selectedIds.has(trade.id) ? "bg-jarvis/10" : ""}`}
+                    className={`border-jarvis/5 jarvis-table-row ${selectedIds.has(trade.id) ? "bg-jarvis/10" : ""}`}
                   >
                     <TableCell>
                       <input

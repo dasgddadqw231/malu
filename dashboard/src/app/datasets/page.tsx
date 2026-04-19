@@ -13,6 +13,7 @@ import {
   Trash2Icon,
   ZapIcon,
 } from "lucide-react";
+import { BootSound } from "@/components/click-effects";
 
 export default function DatasetsPage() {
   const [datasets, setDatasets] = useState<ManualDataset[]>([]);
@@ -45,6 +46,7 @@ export default function DatasetsPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <BootSound />
         <div className="arc-spinner" />
         <p className="text-sm font-mono text-jarvis/60 tracking-widest uppercase">Loading Datasets...</p>
       </div>

@@ -32,7 +32,12 @@ class MarketOrderAction(ActionModule):
         if signal == Signal.HOLD:
             return ActionResult(executed=False, reason="hold signal")
 
-        size_pct = Decimal(str(self.params.get("size_pct", 0.5)))
+        # Support both "size_pct" and legacy "position_size_pct"
+        raw = self.params.get("size_pct", self.params.get("position_size_pct", 0.5))
+        size_pct = Decimal(str(raw))
+        # Normalize: if > 1.0, treat as percentage (e.g. 50 → 0.5)
+        if size_pct > 1:
+            size_pct = size_pct / Decimal("100")
         category = Category(self.params.get("category", "linear"))
 
         trade_amount = available_budget * size_pct

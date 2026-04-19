@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { BotCard } from "@/components/bot-card";
 import { KillSwitch } from "@/components/kill-switch";
-
-import { ClickEffects } from "@/components/click-effects";
+import { BootSound } from "@/components/click-effects";
 
 export default function Dashboard() {
   const { data, error, loading, refresh } = useDashboard();
@@ -13,6 +12,7 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <BootSound />
         <div className="arc-spinner" />
         <p className="text-sm font-mono text-jarvis/60 tracking-widest uppercase">
           Initializing System...
@@ -43,15 +43,14 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6">
-      <ClickEffects />
       {/* Header */}
-      <header className="flex items-end justify-between mb-8">
+      <header className="flex items-end justify-between mb-8 jarvis-boot jarvis-boot-1">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-3xl font-bold tracking-[0.2em] font-mono text-jarvis text-glow">
+            <h1 className="text-3xl font-bold tracking-[0.2em] font-mono text-jarvis text-glow jarvis-text-reveal">
               MALU
             </h1>
-            <div className="h-[1px] w-16 bg-gradient-to-r from-jarvis/60 to-transparent" />
+            <div className="h-[1px] w-16 bg-gradient-to-r from-jarvis/60 to-transparent jarvis-divider" />
           </div>
           <p className="text-xs font-mono text-muted-foreground tracking-[0.15em] uppercase">
             Multi-Agent Leverage Unit // Trading System v1.0
@@ -60,19 +59,19 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           <Link
             href="/trades"
-            className="rounded border border-jarvis/20 bg-jarvis/5 px-3 py-2 text-xs font-mono text-jarvis/70 hover:text-jarvis hover:border-jarvis/40 transition-all tracking-wider"
+            className="jarvis-nav-link rounded border border-jarvis/20 bg-jarvis/5 px-3 py-2 text-xs font-mono text-jarvis/70 hover:text-jarvis hover:border-jarvis/40 transition-all tracking-wider"
           >
             MANUAL TRADES
           </Link>
           <Link
             href="/bot-trades"
-            className="rounded border border-jarvis/20 bg-jarvis/5 px-3 py-2 text-xs font-mono text-jarvis/70 hover:text-jarvis hover:border-jarvis/40 transition-all tracking-wider"
+            className="jarvis-nav-link rounded border border-jarvis/20 bg-jarvis/5 px-3 py-2 text-xs font-mono text-jarvis/70 hover:text-jarvis hover:border-jarvis/40 transition-all tracking-wider"
           >
             BOT TRADES
           </Link>
           <Link
             href="/diy"
-            className="rounded border border-purple-400/20 bg-purple-400/5 px-3 py-2 text-xs font-mono text-purple-400/70 hover:text-purple-400 hover:border-purple-400/40 transition-all tracking-wider"
+            className="jarvis-nav-link jarvis-nav-link-purple rounded border border-purple-400/20 bg-purple-400/5 px-3 py-2 text-xs font-mono text-purple-400/70 hover:text-purple-400 hover:border-purple-400/40 transition-all tracking-wider"
           >
             SIGNATURE
           </Link>
@@ -80,7 +79,7 @@ export default function Dashboard() {
       </header>
 
       {/* Stats HUD */}
-      <div className="grid grid-cols-5 gap-3 mb-8">
+      <div className="grid grid-cols-5 gap-3 mb-8 jarvis-boot jarvis-boot-2">
         <HudStat
           label="TOTAL PNL"
           value={`${totalPnl >= 0 ? "+" : ""}$${Math.abs(totalPnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -137,8 +136,8 @@ export default function Dashboard() {
       </div>
 
       {/* Bot Fleet Header */}
-      <div className="flex items-center gap-4 mb-8">
-        <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-jarvis/20 to-transparent" />
+      <div className="flex items-center gap-4 mb-8 jarvis-boot jarvis-boot-3">
+        <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-jarvis/20 to-transparent jarvis-divider" />
         <span className="text-xs font-mono text-jarvis/40 tracking-[0.3em] uppercase">
           Bot Fleet
         </span>
@@ -146,7 +145,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-2">
           <Link
             href="/deploy"
-            className="flex items-center gap-1.5 rounded border border-jarvis/20 bg-jarvis/5 px-3 py-1.5 text-xs font-mono text-jarvis/70 hover:text-jarvis hover:border-jarvis/40 hover:bg-jarvis/10 transition-all tracking-wider"
+            className="jarvis-nav-link flex items-center gap-1.5 rounded border border-jarvis/20 bg-jarvis/5 px-3 py-1.5 text-xs font-mono text-jarvis/70 hover:text-jarvis hover:border-jarvis/40 hover:bg-jarvis/10 transition-all tracking-wider"
           >
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M12 5v14M5 12h14" />
@@ -171,7 +170,7 @@ export default function Dashboard() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 jarvis-boot jarvis-boot-4">
           {data?.bots.map((bot) => (
             <BotCard
               key={bot.bot_id}

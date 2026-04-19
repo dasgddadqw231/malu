@@ -97,9 +97,29 @@ class BybitClient:
                     entry_price=Decimal(p["avgPrice"]),
                     unrealised_pnl=Decimal(p["unrealisedPnl"]),
                     leverage=p.get("leverage", "1"),
+                    liq_price=Decimal(p.get("liqPrice", "0") or "0"),
                 )
             )
         return positions
+
+    async def set_leverage(self, category: Category, symbol: str, leverage: int) -> None:
+        """Set leverage for a symbol. Silently succeeds if already at target."""
+        params = {
+            "category": category.value,
+            "symbol": symbol,
+            "buyLeverage": str(leverage),
+            "sellLeverage": str(leverage),
+        }
+        try:
+            await self._run_sync(self._client.set_leverage, **params)
+            log.info("leverage_set", symbol=symbol, leverage=leverage)
+        except Exception as e:
+            # Bybit returns 110043 if leverage is already set to this value
+            err_str = str(e)
+            if "110043" in err_str or "not modified" in err_str.lower():
+                log.debug("leverage_already_set", symbol=symbol, leverage=leverage)
+            else:
+                raise
 
     async def get_wallet_balance(self, account_type: str = "UNIFIED") -> WalletBalance:
         result = await self._run_sync(
