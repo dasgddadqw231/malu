@@ -98,6 +98,8 @@ class BybitClient:
                     unrealised_pnl=Decimal(p["unrealisedPnl"]),
                     leverage=p.get("leverage", "1"),
                     liq_price=Decimal(p.get("liqPrice", "0") or "0"),
+                    take_profit=Decimal(p.get("takeProfit", "0") or "0"),
+                    stop_loss=Decimal(p.get("stopLoss", "0") or "0"),
                 )
             )
         return positions

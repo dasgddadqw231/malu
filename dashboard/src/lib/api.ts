@@ -188,6 +188,8 @@ export interface Position {
   unrealised_pnl: string;
   leverage: string;
   liq_price: string;
+  take_profit: string;
+  stop_loss: string;
   source: "bot" | "manual";
   bot: { bot_id: string; name: string; status: string } | null;
 }

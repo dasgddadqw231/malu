@@ -72,6 +72,8 @@ async def get_positions(request: Request):
             "unrealised_pnl": str(pos.unrealised_pnl),
             "leverage": pos.leverage,
             "liq_price": str(pos.liq_price),
+            "take_profit": str(pos.take_profit),
+            "stop_loss": str(pos.stop_loss),
             "source": "bot" if bot_info else "manual",
             "bot": bot_info,
         })

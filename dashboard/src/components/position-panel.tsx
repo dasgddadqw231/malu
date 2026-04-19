@@ -12,6 +12,8 @@ const DEMO_POSITIONS: Position[] = [
     unrealised_pnl: "342.18",
     leverage: "10",
     liq_price: "76420.00",
+    take_profit: "88500.00",
+    stop_loss: "82100.00",
     source: "bot",
     bot: { bot_id: "demo-1", name: "ALPHA-1", status: "in_position" },
   },
@@ -23,6 +25,8 @@ const DEMO_POSITIONS: Position[] = [
     unrealised_pnl: "-28.75",
     leverage: "5",
     liq_price: "1890.00",
+    take_profit: "1480.00",
+    stop_loss: "1660.00",
     source: "bot",
     bot: { bot_id: "demo-2", name: "BETA-ETH", status: "defending" },
   },
@@ -34,6 +38,8 @@ const DEMO_POSITIONS: Position[] = [
     unrealised_pnl: "186.40",
     leverage: "3",
     liq_price: "89.20",
+    take_profit: "155.00",
+    stop_loss: "125.00",
     source: "manual",
     bot: null,
   },
@@ -45,6 +51,8 @@ const DEMO_POSITIONS: Position[] = [
     unrealised_pnl: "-12.50",
     leverage: "2",
     liq_price: "0.0810",
+    take_profit: "0",
+    stop_loss: "0",
     source: "manual",
     bot: null,
   },
@@ -125,11 +133,20 @@ export function PositionPanel() {
   );
 }
 
+function formatPrice(value: number): string {
+  if (value >= 1) {
+    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  return `$${value.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+}
+
 function PositionCard({ position }: { position: Position }) {
   const pnl = Number(position.unrealised_pnl);
   const isLong = position.side === "Buy";
   const entryPrice = Number(position.entry_price);
   const liqPrice = Number(position.liq_price);
+  const tp = Number(position.take_profit);
+  const sl = Number(position.stop_loss);
   const liqDistance =
     liqPrice > 0 && entryPrice > 0
       ? Math.abs(((entryPrice - liqPrice) / entryPrice) * 100)
@@ -174,19 +191,14 @@ function PositionCard({ position }: { position: Position }) {
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs font-mono">
+      <div className="grid grid-cols-3 gap-y-2 gap-x-3 text-xs font-mono">
         <div>
           <p className="text-muted-foreground/60 mb-0.5">SIZE</p>
           <p className="text-foreground">{Number(position.size).toLocaleString()}</p>
         </div>
         <div>
           <p className="text-muted-foreground/60 mb-0.5">ENTRY</p>
-          <p className="text-foreground">
-            ${Number(position.entry_price).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </p>
+          <p className="text-foreground">{formatPrice(entryPrice)}</p>
         </div>
         <div>
           <p className="text-muted-foreground/60 mb-0.5">UNREAL. PNL</p>
@@ -203,13 +215,26 @@ function PositionCard({ position }: { position: Position }) {
           </p>
         </div>
         <div>
-          <p className="text-muted-foreground/60 mb-0.5">LIQ. PRICE</p>
+          <p className="text-emerald-400/60 mb-0.5">TP</p>
+          {tp > 0 ? (
+            <p className="text-emerald-400">{formatPrice(tp)}</p>
+          ) : (
+            <p className="text-muted-foreground/40">-</p>
+          )}
+        </div>
+        <div>
+          <p className="text-red-400/60 mb-0.5">SL</p>
+          {sl > 0 ? (
+            <p className="text-red-400">{formatPrice(sl)}</p>
+          ) : (
+            <p className="text-muted-foreground/40">-</p>
+          )}
+        </div>
+        <div>
+          <p className="text-muted-foreground/60 mb-0.5">LIQ.</p>
           {liqPrice > 0 ? (
             <p className={`${liqDistance && liqDistance < 5 ? "text-red-400" : "text-foreground"}`}>
-              ${liqPrice.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              {formatPrice(liqPrice)}
               {liqDistance !== null && (
                 <span className="text-muted-foreground/50 ml-1">
                   ({liqDistance.toFixed(1)}%)
