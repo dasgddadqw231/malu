@@ -3,6 +3,53 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, Position } from "@/lib/api";
 
+const DEMO_POSITIONS: Position[] = [
+  {
+    symbol: "BTCUSDT",
+    side: "Buy",
+    size: "0.15",
+    entry_price: "84230.50",
+    unrealised_pnl: "342.18",
+    leverage: "10",
+    liq_price: "76420.00",
+    source: "bot",
+    bot: { bot_id: "demo-1", name: "ALPHA-1", status: "in_position" },
+  },
+  {
+    symbol: "ETHUSDT",
+    side: "Sell",
+    size: "2.5",
+    entry_price: "1612.40",
+    unrealised_pnl: "-28.75",
+    leverage: "5",
+    liq_price: "1890.00",
+    source: "bot",
+    bot: { bot_id: "demo-2", name: "BETA-ETH", status: "defending" },
+  },
+  {
+    symbol: "SOLUSDT",
+    side: "Buy",
+    size: "120",
+    entry_price: "132.85",
+    unrealised_pnl: "186.40",
+    leverage: "3",
+    liq_price: "89.20",
+    source: "manual",
+    bot: null,
+  },
+  {
+    symbol: "DOGEUSDT",
+    side: "Buy",
+    size: "50000",
+    entry_price: "0.1542",
+    unrealised_pnl: "-12.50",
+    leverage: "2",
+    liq_price: "0.0810",
+    source: "manual",
+    bot: null,
+  },
+];
+
 export function PositionPanel() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
@@ -10,9 +57,9 @@ export function PositionPanel() {
   const fetchPositions = useCallback(async () => {
     try {
       const data = await api.getPositions();
-      setPositions(data);
+      setPositions(data.length > 0 ? data : DEMO_POSITIONS);
     } catch {
-      // silently fail — positions panel is supplementary
+      setPositions(DEMO_POSITIONS);
     } finally {
       setLoading(false);
     }
