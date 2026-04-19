@@ -333,3 +333,27 @@ class BacktestRepository:
 
     def delete_run(self, run_id: str) -> None:
         self.client.table(self.runs_table).delete().eq("id", run_id).execute()
+
+
+class ManualRiskRepository:
+    def __init__(self, client: Client):
+        self.client = client
+        self.table = "manual_risk_settings"
+
+    def get(self) -> "ManualRiskSettings":
+        from malu.db.schemas import ManualRiskSettings
+        result = self.client.table(self.table).select("*").limit(1).execute()
+        if result.data:
+            return ManualRiskSettings(**result.data[0])
+        return ManualRiskSettings()
+
+    def update(self, data: dict) -> "ManualRiskSettings":
+        from malu.db.schemas import ManualRiskSettings
+        # Get existing row ID
+        existing = self.client.table(self.table).select("id").limit(1).execute()
+        if existing.data:
+            row_id = existing.data[0]["id"]
+            result = self.client.table(self.table).update(data).eq("id", row_id).execute()
+        else:
+            result = self.client.table(self.table).insert(data).execute()
+        return ManualRiskSettings(**result.data[0])

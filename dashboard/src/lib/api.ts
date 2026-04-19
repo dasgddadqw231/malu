@@ -194,6 +194,20 @@ export interface Position {
   bot: { bot_id: string; name: string; status: string } | null;
 }
 
+// Risk Settings Types
+export interface RiskSettings {
+  id: string;
+  enabled: boolean;
+  max_loss_pct: number;
+  max_profit_pct: number;
+  max_daily_loss_usd: number;
+  max_daily_trades: number;
+  max_position_pct: number;
+  max_leverage: number;
+  notify_on_close: boolean;
+  updated_at: string;
+}
+
 // API functions
 export const api = {
   getDashboard: () => request<DashboardSummary>("/dashboard/summary"),
@@ -396,4 +410,13 @@ export const api = {
     }
     return res.json() as Promise<{ uploaded: number; added_to_dataset: number }>;
   },
+
+  // Risk Settings
+  getRiskSettings: () => request<RiskSettings>("/risk/settings"),
+
+  updateRiskSettings: (data: Partial<RiskSettings>) =>
+    request<RiskSettings>("/risk/settings", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 };

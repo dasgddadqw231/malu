@@ -211,3 +211,19 @@ class BacktestRunRequest(BaseModel):
     strategy_config: dict = {}
     slippage_bps: int = 5
     fee_rate: Decimal = Decimal("0.00055")
+
+
+# --- Manual Risk Settings ---
+
+
+class ManualRiskSettings(BaseModel):
+    id: str | None = None
+    enabled: bool = False
+    max_loss_pct: float = 5.0
+    max_profit_pct: float = 0
+    max_daily_loss_usd: float = 0
+    max_daily_trades: int = 0
+    max_position_pct: float = 0
+    max_leverage: int = 0
+    notify_on_close: bool = True
+    updated_at: datetime | None = None

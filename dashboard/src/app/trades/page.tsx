@@ -31,6 +31,8 @@ import {
   DatabaseIcon,
 } from "lucide-react";
 import { BootSound } from "@/components/click-effects";
+import { RiskSettingsPanel } from "@/components/risk-settings-panel";
+import { ShieldIcon } from "lucide-react";
 
 export default function TradesPage() {
   const router = useRouter();
@@ -38,6 +40,7 @@ export default function TradesPage() {
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<"trades" | "risk">("trades");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRationale, setEditRationale] = useState("");
   const [editTags, setEditTags] = useState("");
@@ -201,6 +204,35 @@ export default function TradesPage() {
         </div>
       </header>
 
+      {/* Tab switcher */}
+      <div className="flex items-center gap-2 mb-6 jarvis-boot jarvis-boot-2">
+        <button
+          onClick={() => setTab("trades")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded text-xs font-mono font-bold tracking-wider transition-all ${
+            tab === "trades"
+              ? "bg-jarvis/15 text-jarvis border border-jarvis/30"
+              : "text-muted-foreground/60 border border-transparent hover:text-jarvis/60"
+          }`}
+        >
+          TRADE HISTORY
+        </button>
+        <button
+          onClick={() => setTab("risk")}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded text-xs font-mono font-bold tracking-wider transition-all ${
+            tab === "risk"
+              ? "bg-jarvis/15 text-jarvis border border-jarvis/30"
+              : "text-muted-foreground/60 border border-transparent hover:text-jarvis/60"
+          }`}
+        >
+          <ShieldIcon className="size-3" />
+          RISK GUARD
+        </button>
+      </div>
+
+      {tab === "risk" ? (
+        <RiskSettingsPanel />
+      ) : (
+      <>
       {/* Dataset creation bar */}
       {selectedIds.size > 0 && (
         <div className="jarvis-card rounded-lg p-4 mb-4 border border-jarvis/20 space-y-3">
@@ -460,6 +492,8 @@ export default function TradesPage() {
             </TableBody>
           </Table>
         </div>
+      )}
+      </>
       )}
     </div>
   );

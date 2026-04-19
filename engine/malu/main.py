@@ -10,6 +10,7 @@ from malu.api.routes_bot import router as bot_router
 from malu.api.routes_dashboard import router as dashboard_router
 from malu.api.routes_dataset import router as dataset_router
 from malu.api.routes_diy import router as diy_router
+from malu.api.routes_risk import router as risk_router
 from malu.api.ws import bot_event_handler, router as ws_router
 from malu.config import Settings
 from malu.core.bot import BotConfig
@@ -17,7 +18,7 @@ from malu.core.bot_manager import BotManager
 from malu.core.budget import BudgetLedger
 from malu.core.kill_switch import KillSwitch
 from malu.core.rate_limiter import APIRateLimiter
-from malu.db.repositories import BacktestRepository, BotRepository, ManualDatasetRepository, SignatureRepository, DiyTradeRepository, TradeRepository
+from malu.db.repositories import BacktestRepository, BotRepository, ManualDatasetRepository, ManualRiskRepository, SignatureRepository, DiyTradeRepository, TradeRepository
 from malu.db.supabase_client import get_supabase
 from malu.exchange.bybit_client import BybitClient
 from malu.exchange.market_data_feed import MarketDataFeed
@@ -70,6 +71,7 @@ async def lifespan(app: FastAPI):
     signature_repo = SignatureRepository(supabase)
     backtest_repo = BacktestRepository(supabase)
     dataset_repo = ManualDatasetRepository(supabase)
+    risk_repo = ManualRiskRepository(supabase)
 
     # Store in app state
     app.state.market_data_feed = market_data_feed
@@ -80,6 +82,7 @@ async def lifespan(app: FastAPI):
     app.state.signature_repo = signature_repo
     app.state.backtest_repo = backtest_repo
     app.state.dataset_repo = dataset_repo
+    app.state.risk_repo = risk_repo
     app.state.settings = settings
 
     # Load existing bots from DB
@@ -130,6 +133,7 @@ app.include_router(bot_router)
 app.include_router(dashboard_router)
 app.include_router(dataset_router)
 app.include_router(diy_router)
+app.include_router(risk_router)
 app.include_router(ws_router)
 
 
