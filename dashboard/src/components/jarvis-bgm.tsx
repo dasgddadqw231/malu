@@ -319,35 +319,49 @@ function createBGM(ctx: AudioContext) {
 }
 
 export function JarvisBGM() {
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(true);
   const ctxRef = useRef<AudioContext | null>(null);
   const bgmRef = useRef<ReturnType<typeof createBGM> | null>(null);
+
+  const startBGM = useCallback(() => {
+    if (!ctxRef.current) {
+      ctxRef.current = new AudioContext();
+    }
+    if (ctxRef.current.state === "suspended") {
+      ctxRef.current.resume();
+    }
+    if (!bgmRef.current) {
+      bgmRef.current = createBGM(ctxRef.current);
+    }
+    bgmRef.current.fadeIn(3);
+  }, []);
 
   const toggle = useCallback(() => {
     if (playing) {
       bgmRef.current?.fadeOut(1.5);
       setPlaying(false);
     } else {
-      if (!ctxRef.current) {
-        ctxRef.current = new AudioContext();
-      }
-      if (ctxRef.current.state === "suspended") {
-        ctxRef.current.resume();
-      }
-      if (!bgmRef.current) {
-        bgmRef.current = createBGM(ctxRef.current);
-      }
-      bgmRef.current.fadeIn(3);
+      startBGM();
       setPlaying(true);
     }
-  }, [playing]);
+  }, [playing, startBGM]);
 
+  // Auto-play on first user interaction (browsers require gesture)
   useEffect(() => {
+    const handleInteraction = () => {
+      startBGM();
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("keydown", handleInteraction);
+    };
+    window.addEventListener("click", handleInteraction);
+    window.addEventListener("keydown", handleInteraction);
     return () => {
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("keydown", handleInteraction);
       bgmRef.current?.destroy();
       ctxRef.current?.close().catch(() => {});
     };
-  }, []);
+  }, [startBGM]);
 
   return (
     <button
