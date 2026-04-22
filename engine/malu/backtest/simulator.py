@@ -96,8 +96,19 @@ class BacktestSimulator:
 
         defense_cfg = config.strategy_config.get("defense", {})
         defense_params = defense_cfg.get("params", {})
-        self.max_loss_pct = Decimal(str(defense_params.get("max_loss_pct", 5.0)))
+        self.defense_module = defense_cfg.get("module", "fixed_pct")
+
+        # Fixed pct defense params
+        self.max_loss_pct = Decimal(str(defense_params.get("max_loss_pct",
+                                        defense_params.get("stop_loss_pct", 5.0))))
         self.take_profit_pct = Decimal(str(defense_params.get("take_profit_pct", 3.0)))
+
+        # ATR defense params
+        self.atr_period = defense_params.get("atr_period", 14)
+        self.stop_atr_multiple = Decimal(str(defense_params.get("stop_atr_multiple", 2.0)))
+        self.tp_atr_multiple = Decimal(str(defense_params.get("tp_atr_multiple", 3.0)))
+        # Trailing ATR params
+        self.trailing_activate_pct = Decimal(str(defense_params.get("activate_after_pct", 1.0)))
 
         action_cfg = config.strategy_config.get("action", {})
         action_params = action_cfg.get("params", {})
@@ -186,29 +197,82 @@ class BacktestSimulator:
         consecutive_losses = 0
         cooldown_remaining = 0
 
+        # ATR/trailing state
+        atr_stop_price: Decimal | None = None
+        atr_tp_price: Decimal | None = None
+        trailing_high: Decimal | None = None
+        trailing_low: Decimal | None = None
+        trailing_active = False
+
         for i in range(lookback, len(candles)):
             bar = candles[i]
             window_closes = [c.close for c in candles[i - lookback : i + 1]]
 
             # --- Defense check ---
             if position is not None:
-                pnl_pct = self._calc_pnl_pct(position, bar.close)
-
                 should_close = False
                 reason = ""
 
-                if pnl_pct <= -self.max_loss_pct:
-                    should_close = True
-                    reason = f"stop_loss: {pnl_pct:.2f}%"
-                elif pnl_pct >= self.take_profit_pct:
-                    should_close = True
-                    reason = f"take_profit: {pnl_pct:.2f}%"
+                if self.defense_module == "fixed_pct":
+                    pnl_pct = self._calc_pnl_pct(position, bar.close)
+                    if pnl_pct <= -self.max_loss_pct:
+                        should_close = True
+                        reason = f"stop_loss: {pnl_pct:.2f}%"
+                    elif pnl_pct >= self.take_profit_pct:
+                        should_close = True
+                        reason = f"take_profit: {pnl_pct:.2f}%"
+
+                elif self.defense_module == "atr_stop":
+                    if position.side == "Long":
+                        if bar.close <= atr_stop_price:
+                            pnl_pct = self._calc_pnl_pct(position, bar.close)
+                            should_close = True
+                            reason = f"atr_stop_loss: {pnl_pct:.2f}% (stop={float(atr_stop_price):.0f})"
+                        elif bar.close >= atr_tp_price:
+                            pnl_pct = self._calc_pnl_pct(position, bar.close)
+                            should_close = True
+                            reason = f"atr_take_profit: {pnl_pct:.2f}% (tp={float(atr_tp_price):.0f})"
+                    else:
+                        if bar.close >= atr_stop_price:
+                            pnl_pct = self._calc_pnl_pct(position, bar.close)
+                            should_close = True
+                            reason = f"atr_stop_loss: {pnl_pct:.2f}% (stop={float(atr_stop_price):.0f})"
+                        elif bar.close <= atr_tp_price:
+                            pnl_pct = self._calc_pnl_pct(position, bar.close)
+                            should_close = True
+                            reason = f"atr_take_profit: {pnl_pct:.2f}% (tp={float(atr_tp_price):.0f})"
+
+                elif self.defense_module == "trailing_atr":
+                    pnl_pct = self._calc_pnl_pct(position, bar.close)
+                    # First check fixed SL (always active)
+                    if pnl_pct <= -self.max_loss_pct:
+                        should_close = True
+                        reason = f"trailing_stop_loss: {pnl_pct:.2f}%"
+                    elif trailing_active:
+                        # Update high/low water mark
+                        if position.side == "Long":
+                            if bar.close > trailing_high:
+                                trailing_high = bar.close
+                            trail_stop = trailing_high - atr_stop_price  # atr_stop_price stores ATR distance
+                            if bar.close <= trail_stop:
+                                should_close = True
+                                reason = f"trailing_stop: price {float(bar.close):.0f} <= trail {float(trail_stop):.0f}"
+                        else:
+                            if bar.close < trailing_low:
+                                trailing_low = bar.close
+                            trail_stop = trailing_low + atr_stop_price
+                            if bar.close >= trail_stop:
+                                should_close = True
+                                reason = f"trailing_stop: price {float(bar.close):.0f} >= trail {float(trail_stop):.0f}"
+                    elif pnl_pct >= self.trailing_activate_pct:
+                        trailing_active = True
+                        trailing_high = bar.close
+                        trailing_low = bar.close
 
                 if should_close:
                     trade = self._close_position(position, bar, reason)
                     trades.append(trade)
                     equity += trade.pnl - trade.fee - trade.funding_paid
-                    # Track consecutive losses for cooldown
                     if trade.pnl <= 0:
                         consecutive_losses += 1
                         if consecutive_losses >= self.max_consecutive_losses:
@@ -216,6 +280,9 @@ class BacktestSimulator:
                     else:
                         consecutive_losses = 0
                     position = None
+                    atr_stop_price = None
+                    atr_tp_price = None
+                    trailing_active = False
 
             # --- Apply funding ---
             if position is not None:
@@ -254,6 +321,22 @@ class BacktestSimulator:
                                 qty=qty,
                                 entry_time=bar.timestamp,
                             )
+
+                            # Set ATR-based SL/TP levels at entry
+                            if self.defense_module in ("atr_stop", "trailing_atr"):
+                                atr = self._calc_atr_from_candles(candles, i)
+                                if self.defense_module == "atr_stop":
+                                    if side == "Long":
+                                        atr_stop_price = entry_price - self.stop_atr_multiple * atr
+                                        atr_tp_price = entry_price + self.tp_atr_multiple * atr
+                                    else:
+                                        atr_stop_price = entry_price + self.stop_atr_multiple * atr
+                                        atr_tp_price = entry_price - self.tp_atr_multiple * atr
+                                else:  # trailing_atr
+                                    atr_stop_price = self.stop_atr_multiple * atr  # store distance
+                                    trailing_high = entry_price
+                                    trailing_low = entry_price
+                                    trailing_active = False
 
             # --- Track equity ---
             mark_equity = equity
@@ -381,6 +464,21 @@ class BacktestSimulator:
         if signal == Signal.SHORT and bar.close > ema_val:
             return False  # price above EMA, short blocked
         return True
+
+    def _calc_atr_from_candles(self, candles: list[HistoricalCandle], bar_idx: int) -> Decimal:
+        """Calculate ATR at bar_idx using recent candle data."""
+        from malu.strategy import indicators as ind
+        period = self.atr_period
+        start = max(0, bar_idx - period - 1)
+        window = candles[start:bar_idx + 1]
+        if len(window) < period:
+            # Fallback: 2% of close price
+            return candles[bar_idx].close * Decimal("0.02")
+        highs = [c.high for c in window]
+        lows = [c.low for c in window]
+        closes = [c.close for c in window]
+        atr = ind.calc_atr(highs, lows, closes, period)
+        return atr if atr > 0 else candles[bar_idx].close * Decimal("0.02")
 
     def _calc_pnl_pct(self, pos: _OpenPosition, current_price: Decimal) -> Decimal:
         if pos.side == "Long":
