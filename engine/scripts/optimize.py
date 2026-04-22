@@ -100,11 +100,19 @@ STRATEGY_GRIDS = {
     "ema_cross": _ema_cross_grid(),
 }
 
-DEFENSE_GRID = [
-    {"max_loss_pct": sl, "take_profit_pct": tp}
+DEFENSE_GRID_FIXED = [
+    {"module": "fixed_pct", "params": {"stop_loss_pct": sl, "take_profit_pct": tp}}
     for sl in [2.0, 3.0, 5.0, 7.0]
-    for tp in [2.0, 3.0, 5.0, 8.0, 10.0]
+    for tp in [3.0, 5.0, 8.0, 10.0]
 ]
+
+DEFENSE_GRID_ATR = [
+    {"module": "atr_stop", "params": {"atr_period": 14, "stop_atr_multiple": sl, "tp_atr_multiple": tp}}
+    for sl in [1.5, 2.0, 3.0]
+    for tp in [3.0, 4.5, 6.0]
+]
+
+DEFENSE_GRID = DEFENSE_GRID_FIXED + DEFENSE_GRID_ATR
 
 
 def _date_to_ms(date_str: str) -> int:
@@ -116,7 +124,7 @@ def run_single(
     candles,
     funding_rates,
     judgment_cfg: dict,
-    defense_params: dict,
+    defense_cfg: dict,
     initial_capital: Decimal = Decimal("10000"),
 ) -> dict | None:
     """Run one backtest using pre-fetched data. Returns summary or None."""
@@ -124,8 +132,10 @@ def run_single(
         symbol="",  # unused with run_from_candles
         strategy_config={
             "judgment": judgment_cfg,
-            "defense": {"params": defense_params},
-            "action": {"params": {"position_size_pct": 90}},
+            "defense": defense_cfg,
+            "action": {"params": {"position_size_pct": 100}},
+            "max_consecutive_losses": 3,
+            "cooldown_bars": 48,
         },
         slippage_bps=5,
         fee_rate=Decimal("0.00055"),
@@ -143,7 +153,7 @@ def run_single(
 
     return {
         "judgment": judgment_cfg,
-        "defense": defense_params,
+        "defense": defense_cfg,
         "net_pnl": float(result.net_pnl),
         "return_pct": float(result.net_pnl / initial_capital * 100),
         "win_rate": result.win_rate,
@@ -263,7 +273,13 @@ async def main():
         print(f"  📈 승률: {r['win_rate']:.1f}%  |  샤프: {r['sharpe_ratio']:.2f}  |  MDD: {r['max_drawdown']:.1f}%")
         print(f"  🔢 거래수: {r['total_trades']}  |  건당 평균: ${r['avg_pnl_per_trade']:+.2f}  |  수수료: ${r['total_fees']:.2f}")
         print(f"  🎯 Entry: {json.dumps({k:v for k,v in params.items() if k != 'interval'}, ensure_ascii=False)}")
-        print(f"  🛡️  Exit:  SL={defense['max_loss_pct']}% / TP={defense['take_profit_pct']}%")
+        defense = r["defense"]
+        d_mod = defense.get("module", "fixed_pct")
+        d_params = defense.get("params", defense)
+        if d_mod == "atr_stop":
+            print(f"  🛡️  Exit:  ATR SL={d_params['stop_atr_multiple']}x / TP={d_params['tp_atr_multiple']}x")
+        else:
+            print(f"  🛡️  Exit:  SL={d_params.get('stop_loss_pct', d_params.get('max_loss_pct', '?'))}% / TP={d_params.get('take_profit_pct', '?')}%")
 
     # ── Step 5: Output best as bot-ready config ──
     best = top[0]
@@ -279,19 +295,15 @@ async def main():
         "cycle_interval": 5.0,
         "strategy_config": {
             "judgment": best["judgment"],
-            "defense": {
-                "module": "fixed_pct",
-                "params": {
-                    "stop_loss_pct": best_defense["max_loss_pct"],
-                    "take_profit_pct": best_defense["take_profit_pct"],
-                },
-            },
+            "defense": best_defense,
             "action": {
                 "module": "market_order",
-                "params": {"size_pct": 0.9},
+                "params": {"size_pct": 1.0},
             },
             "sizing": None,
             "filters": [],
+            "max_consecutive_losses": 3,
+            "cooldown_bars": 48,
         },
         "bot_controls": {
             "daily_loss_limit_pct": 5.0,
@@ -313,12 +325,18 @@ async def main():
     print(f"\n{'='*70}")
     print(f"  📊 상위 전략 요약 비교")
     print(f"{'='*70}")
-    print(f"  {'#':>2} {'전략':<12} {'봉':>3} {'수익':>10} {'수익률':>7} {'승률':>5} {'샤프':>5} {'MDD':>5} {'거래':>4} {'SL':>4} {'TP':>4}")
-    print(f"  {'─'*68}")
+    print(f"  {'#':>2} {'전략':<12} {'봉':>3} {'방어':<8} {'수익':>10} {'수익률':>7} {'승률':>5} {'샤프':>5} {'MDD':>5} {'거래':>4}")
+    print(f"  {'─'*72}")
     for i, r in enumerate(top, 1):
         m = r["judgment"]["module"]
         d = r["defense"]
-        print(f"  {i:>2} {m:<12} {r['interval']:>3} ${r['net_pnl']:>+9,.0f} {r['return_pct']:>+6.1f}% {r['win_rate']:>4.0f}% {r['sharpe_ratio']:>5.2f} {r['max_drawdown']:>4.1f}% {r['total_trades']:>4} {d['max_loss_pct']:>4.1f} {d['take_profit_pct']:>4.1f}")
+        d_mod = d.get("module", "fixed_pct")
+        d_params = d.get("params", d)
+        if d_mod == "atr_stop":
+            d_str = f"ATR{d_params['stop_atr_multiple']}/{d_params['tp_atr_multiple']}"
+        else:
+            d_str = f"{d_params.get('stop_loss_pct', d_params.get('max_loss_pct', '?'))}/{d_params.get('take_profit_pct', '?')}"
+        print(f"  {i:>2} {m:<12} {r['interval']:>3} {d_str:<8} ${r['net_pnl']:>+9,.0f} {r['return_pct']:>+6.1f}% {r['win_rate']:>4.0f}% {r['sharpe_ratio']:>5.2f} {r['max_drawdown']:>4.1f}% {r['total_trades']:>4}")
 
 
 if __name__ == "__main__":
