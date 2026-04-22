@@ -139,12 +139,25 @@ class BacktestSimulator:
         funding_rates = await fetcher.fetch_funding_rates(
             self.config.symbol, start_ms, end_ms
         )
-        return self._simulate(candles, funding_rates)
+
+        # Fetch daily candles for trend filter (with lookback warmup)
+        daily_candles: list[HistoricalCandle] | None = None
+        if self.trend_filter_enabled:
+            warmup_days = self.trend_ema_period + 30  # extra buffer
+            warmup_ms = warmup_days * 86_400_000
+            daily_candles = await fetcher.fetch_klines(
+                self.config.symbol, "D", start_ms - warmup_ms, end_ms
+            )
+            log.info("trend_filter_data", daily_bars=len(daily_candles),
+                     ema_period=self.trend_ema_period)
+
+        return self._simulate(candles, funding_rates, daily_candles=daily_candles)
 
     def _simulate(
         self,
         candles: list[HistoricalCandle],
         funding_rates: list[FundingRecord],
+        daily_candles: list[HistoricalCandle] | None = None,
     ) -> BacktestResult:
         if len(candles) < 25:
             log.warning("insufficient_candles", count=len(candles))
@@ -153,10 +166,14 @@ class BacktestSimulator:
         # Build funding rate lookup: sorted list of (timestamp, rate)
         funding_lookup = [(f.timestamp, f.funding_rate) for f in funding_rates]
 
-        # Build daily candles for trend filter
+        # Build daily EMA for trend filter
         daily_ema_cache: dict[int, Decimal] = {}
         if self.trend_filter_enabled:
-            daily_ema_cache = self._build_daily_ema(candles)
+            # Prefer dedicated daily candles (with proper warmup) over aggregation
+            source = daily_candles if daily_candles else candles
+            daily_ema_cache = self._build_daily_ema(source)
+            log.info("trend_filter_ema", days_available=len(daily_ema_cache),
+                     required=self.trend_ema_period)
 
         lookback = self._calc_lookback()
         equity = self.config.initial_capital
@@ -310,29 +327,28 @@ class BacktestSimulator:
     def _build_daily_ema(
         self, candles: list[HistoricalCandle]
     ) -> dict[int, Decimal]:
-        """Aggregate intraday candles into daily closes and compute EMA.
+        """Aggregate candles into daily closes and compute EMA.
 
         Returns a dict mapping each day's start timestamp (00:00 UTC ms)
-        to that day's EMA value. Intraday bars look up the most recent
-        completed day's EMA.
+        to that day's EMA value.
         """
         from malu.strategy import indicators as ind
 
-        # Aggregate to daily closes (keyed by day start ts)
         day_ms = 86_400_000
         daily_closes: dict[int, Decimal] = {}
         for c in candles:
             day_start = (c.timestamp // day_ms) * day_ms
-            daily_closes[day_start] = c.close  # last bar of each day wins
+            daily_closes[day_start] = c.close
 
         sorted_days = sorted(daily_closes.keys())
         closes_list = [daily_closes[d] for d in sorted_days]
 
         if len(closes_list) < self.trend_ema_period:
+            log.warning("trend_filter_insufficient_data",
+                        days=len(closes_list), required=self.trend_ema_period)
             return {}
 
         ema_values = ind.calc_ema(closes_list, self.trend_ema_period)
-        # ema_values has same length as closes_list
         result: dict[int, Decimal] = {}
         for day_ts, ema_val in zip(sorted_days, ema_values):
             result[day_ts] = ema_val
