@@ -103,6 +103,23 @@ class BacktestSimulator:
         action_params = action_cfg.get("params", {})
         self.position_size_pct = Decimal(str(action_params.get("position_size_pct", 95)))
 
+        # --- Filter support: trend filter ---
+        self.trend_filter_enabled = False
+        self.trend_ema_period = 200
+        self.trend_interval = "D"
+        filters_cfg = config.strategy_config.get("filters", [])
+        for f_cfg in filters_cfg:
+            if f_cfg.get("module") == "trend_filter":
+                self.trend_filter_enabled = True
+                self.trend_ema_period = f_cfg.get("params", {}).get("ema_period", 200)
+                self.trend_interval = f_cfg.get("params", {}).get("interval", "D")
+
+        # --- Consecutive loss cooldown ---
+        self.max_consecutive_losses = config.strategy_config.get(
+            "max_consecutive_losses", 3
+        )
+        self.cooldown_bars = config.strategy_config.get("cooldown_bars", 48)  # 48 bars = 12h on 15m
+
     def run_from_candles(
         self,
         candles: list[HistoricalCandle],
@@ -136,6 +153,11 @@ class BacktestSimulator:
         # Build funding rate lookup: sorted list of (timestamp, rate)
         funding_lookup = [(f.timestamp, f.funding_rate) for f in funding_rates]
 
+        # Build daily candles for trend filter
+        daily_ema_cache: dict[int, Decimal] = {}
+        if self.trend_filter_enabled:
+            daily_ema_cache = self._build_daily_ema(candles)
+
         lookback = self._calc_lookback()
         equity = self.config.initial_capital
         peak_equity = equity
@@ -144,6 +166,8 @@ class BacktestSimulator:
         position: _OpenPosition | None = None
         trades: list[SimulatedTrade] = []
         equity_curve: list[dict] = []
+        consecutive_losses = 0
+        cooldown_remaining = 0
 
         for i in range(lookback, len(candles)):
             bar = candles[i]
@@ -167,6 +191,13 @@ class BacktestSimulator:
                     trade = self._close_position(position, bar, reason)
                     trades.append(trade)
                     equity += trade.pnl - trade.fee - trade.funding_paid
+                    # Track consecutive losses for cooldown
+                    if trade.pnl <= 0:
+                        consecutive_losses += 1
+                        if consecutive_losses >= self.max_consecutive_losses:
+                            cooldown_remaining = self.cooldown_bars
+                    else:
+                        consecutive_losses = 0
                     position = None
 
             # --- Apply funding ---
@@ -180,22 +211,32 @@ class BacktestSimulator:
 
             # --- Judgment (only if flat) ---
             if position is None:
-                result = self.judgment.evaluate_from_candles(window_closes)
+                # Cooldown after consecutive losses
+                if cooldown_remaining > 0:
+                    cooldown_remaining -= 1
+                else:
+                    result = self.judgment.evaluate_from_candles(window_closes)
 
-                if result.signal in (Signal.LONG, Signal.SHORT):
-                    side = "Long" if result.signal == Signal.LONG else "Short"
-                    entry_price = self._apply_slippage(bar.close, side, entry=True)
-                    budget = equity * self.position_size_pct / 100
-                    qty = budget / entry_price
-                    entry_fee = qty * entry_price * self.config.fee_rate
-                    equity -= entry_fee
+                    if result.signal in (Signal.LONG, Signal.SHORT):
+                        # Trend filter: check daily EMA direction
+                        if self.trend_filter_enabled and not self._check_trend_filter(
+                            bar, result.signal, daily_ema_cache
+                        ):
+                            pass  # blocked by trend filter
+                        else:
+                            side = "Long" if result.signal == Signal.LONG else "Short"
+                            entry_price = self._apply_slippage(bar.close, side, entry=True)
+                            budget = equity * self.position_size_pct / 100
+                            qty = budget / entry_price
+                            entry_fee = qty * entry_price * self.config.fee_rate
+                            equity -= entry_fee
 
-                    position = _OpenPosition(
-                        side=side,
-                        entry_price=entry_price,
-                        qty=qty,
-                        entry_time=bar.timestamp,
-                    )
+                            position = _OpenPosition(
+                                side=side,
+                                entry_price=entry_price,
+                                qty=qty,
+                                entry_time=bar.timestamp,
+                            )
 
             # --- Track equity ---
             mark_equity = equity
@@ -265,6 +306,65 @@ class BacktestSimulator:
             p.get("trend_ema", 0),
         ]
         return max(periods) + 10
+
+    def _build_daily_ema(
+        self, candles: list[HistoricalCandle]
+    ) -> dict[int, Decimal]:
+        """Aggregate intraday candles into daily closes and compute EMA.
+
+        Returns a dict mapping each day's start timestamp (00:00 UTC ms)
+        to that day's EMA value. Intraday bars look up the most recent
+        completed day's EMA.
+        """
+        from malu.strategy import indicators as ind
+
+        # Aggregate to daily closes (keyed by day start ts)
+        day_ms = 86_400_000
+        daily_closes: dict[int, Decimal] = {}
+        for c in candles:
+            day_start = (c.timestamp // day_ms) * day_ms
+            daily_closes[day_start] = c.close  # last bar of each day wins
+
+        sorted_days = sorted(daily_closes.keys())
+        closes_list = [daily_closes[d] for d in sorted_days]
+
+        if len(closes_list) < self.trend_ema_period:
+            return {}
+
+        ema_values = ind.calc_ema(closes_list, self.trend_ema_period)
+        # ema_values has same length as closes_list
+        result: dict[int, Decimal] = {}
+        for day_ts, ema_val in zip(sorted_days, ema_values):
+            result[day_ts] = ema_val
+        return result
+
+    def _check_trend_filter(
+        self,
+        bar: HistoricalCandle,
+        signal: Signal,
+        daily_ema_cache: dict[int, Decimal],
+    ) -> bool:
+        """Return True if signal is aligned with daily trend."""
+        if not daily_ema_cache:
+            return True  # no data → allow
+
+        day_ms = 86_400_000
+        # Use previous day's EMA (current day not yet complete)
+        bar_day = (bar.timestamp // day_ms) * day_ms
+        prev_day = bar_day - day_ms
+
+        ema_val = daily_ema_cache.get(prev_day)
+        if ema_val is None:
+            # Try current day if previous not available
+            ema_val = daily_ema_cache.get(bar_day)
+        if ema_val is None:
+            return True
+
+        if signal == Signal.LONG and bar.close < ema_val:
+            return False  # price below EMA, long blocked
+        if signal == Signal.SHORT and bar.close > ema_val:
+            return False  # price above EMA, short blocked
+        return True
 
     def _calc_pnl_pct(self, pos: _OpenPosition, current_price: Decimal) -> Decimal:
         if pos.side == "Long":
