@@ -34,4 +34,4 @@ class Settings(BaseSettings):
     ws_enabled: bool = True
     ws_kline_intervals: str = "1,5,15"  # comma-separated
 
-    model_config = {"env_file": str(_PROJECT_ROOT / ".env"), "env_file_encoding": "utf-8"}
+    model_config = {"env_file": str(_PROJECT_ROOT / ".env"), "env_file_encoding": "utf-8", "extra": "ignore"}

@@ -208,26 +208,21 @@ class EMACrossJudgment(JudgmentModule):
         interval: str (default "15")
     """
 
-    async def evaluate(self, symbol: str, client: BybitClient, market_data=None) -> JudgmentResult:
-        interval = self.params.get("interval", "15")
-        trend_ema_period = self.params.get("trend_ema", 200)
+    def evaluate_from_candles(self, closes: list[Decimal]) -> JudgmentResult:
+        fast = self.params.get("fast_period", 9)
         slow = self.params.get("slow_period", 21)
-        limit = max(slow, trend_ema_period if trend_ema_period else slow) + 10
-
-        _, _, _, closes, _ = await _get_ohlcv(symbol, client, market_data, interval, limit)
 
         if len(closes) < slow + 2:
             return JudgmentResult(signal=Signal.HOLD, reason="insufficient data")
 
-        fast = self.params.get("fast_period", 9)
         require_trend = self.params.get("require_trend", True)
+        trend_ema_period = self.params.get("trend_ema", 200)
 
         direction, just_crossed = ind.detect_ema_cross(closes, fast, slow)
 
         if not just_crossed:
             return JudgmentResult(signal=Signal.HOLD, reason=f"EMA {fast}/{slow} no cross, trend={direction}")
 
-        # Trend filter
         if require_trend and trend_ema_period and len(closes) >= trend_ema_period + 1:
             trend_ema = ind.calc_ema(closes, trend_ema_period)
             price = closes[-1]
@@ -238,6 +233,15 @@ class EMACrossJudgment(JudgmentModule):
 
         signal = Signal.LONG if direction == "long" else Signal.SHORT
         return JudgmentResult(signal=signal, confidence=0.6, reason=f"EMA {fast}/{slow} cross {direction}")
+
+    async def evaluate(self, symbol: str, client: BybitClient, market_data=None) -> JudgmentResult:
+        interval = self.params.get("interval", "15")
+        trend_ema_period = self.params.get("trend_ema", 200)
+        slow = self.params.get("slow_period", 21)
+        limit = max(slow, trend_ema_period if trend_ema_period else slow) + 10
+
+        _, _, _, closes, _ = await _get_ohlcv(symbol, client, market_data, interval, limit)
+        return self.evaluate_from_candles(closes)
 
 
 class MACDCrossJudgment(JudgmentModule):
@@ -251,6 +255,34 @@ class MACDCrossJudgment(JudgmentModule):
         interval: str (default "15")
     """
 
+    def evaluate_from_candles(self, closes: list[Decimal]) -> JudgmentResult:
+        fast = self.params.get("fast_ema", 12)
+        slow = self.params.get("slow_ema", 26)
+        sig = self.params.get("signal_period", 9)
+        require_zero = self.params.get("require_zero_cross", False)
+
+        if len(closes) < slow + sig:
+            return JudgmentResult(signal=Signal.HOLD, reason="insufficient data for MACD")
+
+        macd_val, signal_val, hist = ind.calc_macd(closes, fast, slow, sig)
+        prev_macd, prev_signal, prev_hist = ind.calc_macd(closes[:-1], fast, slow, sig)
+
+        curr_diff = macd_val - signal_val
+        prev_diff = prev_macd - prev_signal
+
+        if curr_diff > 0 and prev_diff <= 0:
+            if require_zero and macd_val > 0:
+                return JudgmentResult(signal=Signal.HOLD, reason="MACD bullish cross but above zero line")
+            strength = "strong" if macd_val < 0 else "normal"
+            return JudgmentResult(signal=Signal.LONG, confidence=0.6, reason=f"MACD bullish cross ({strength})")
+        elif curr_diff < 0 and prev_diff >= 0:
+            if require_zero and macd_val < 0:
+                return JudgmentResult(signal=Signal.HOLD, reason="MACD bearish cross but below zero line")
+            strength = "strong" if macd_val > 0 else "normal"
+            return JudgmentResult(signal=Signal.SHORT, confidence=0.6, reason=f"MACD bearish cross ({strength})")
+
+        return JudgmentResult(signal=Signal.HOLD, reason=f"MACD no cross, hist={float(hist):.4f}")
+
     async def evaluate(self, symbol: str, client: BybitClient, market_data=None) -> JudgmentResult:
         interval = self.params.get("interval", "15")
         slow = self.params.get("slow_ema", 26)
@@ -258,36 +290,7 @@ class MACDCrossJudgment(JudgmentModule):
         limit = slow + sig + 15
 
         _, _, _, closes, _ = await _get_ohlcv(symbol, client, market_data, interval, limit)
-
-        if len(closes) < slow + sig:
-            return JudgmentResult(signal=Signal.HOLD, reason="insufficient data for MACD")
-
-        fast = self.params.get("fast_ema", 12)
-        require_zero = self.params.get("require_zero_cross", False)
-
-        # Current MACD
-        macd_val, signal_val, hist = ind.calc_macd(closes, fast, slow, sig)
-        # Previous MACD (exclude last bar)
-        prev_macd, prev_signal, prev_hist = ind.calc_macd(closes[:-1], fast, slow, sig)
-
-        # Detect crossover
-        curr_diff = macd_val - signal_val
-        prev_diff = prev_macd - prev_signal
-
-        if curr_diff > 0 and prev_diff <= 0:
-            # Bullish cross
-            if require_zero and macd_val > 0:
-                return JudgmentResult(signal=Signal.HOLD, reason="MACD bullish cross but above zero line")
-            strength = "strong" if macd_val < 0 else "normal"
-            return JudgmentResult(signal=Signal.LONG, confidence=0.6, reason=f"MACD bullish cross ({strength})")
-        elif curr_diff < 0 and prev_diff >= 0:
-            # Bearish cross
-            if require_zero and macd_val < 0:
-                return JudgmentResult(signal=Signal.HOLD, reason="MACD bearish cross but below zero line")
-            strength = "strong" if macd_val > 0 else "normal"
-            return JudgmentResult(signal=Signal.SHORT, confidence=0.6, reason=f"MACD bearish cross ({strength})")
-
-        return JudgmentResult(signal=Signal.HOLD, reason=f"MACD no cross, hist={float(hist):.4f}")
+        return self.evaluate_from_candles(closes)
 
 
 class RSIDivergenceJudgment(JudgmentModule):
@@ -359,3 +362,111 @@ class RSIDivergenceJudgment(JudgmentModule):
                         return JudgmentResult(signal=Signal.SHORT, confidence=0.65, reason=f"bearish RSI divergence, RSI={current_rsi:.1f}")
 
         return JudgmentResult(signal=Signal.HOLD, reason="no divergence detected")
+
+
+class BNFDipBuyJudgment(JudgmentModule):
+    """BNF-style dip buying: enter long after deep drawdown with reversal confirmation.
+
+    Strategy (inspired by BNF / 小手川隆):
+      1. Price has dropped significantly from recent high (drawdown threshold)
+      2. Volume surges at the bounce zone (selling climax → buying interest)
+      3. Price stops making new lows (support formation)
+      4. MACD histogram turns positive (momentum shift)
+
+    Best used on daily (D) or 4-hour (240) timeframes.
+
+    Params:
+        drawdown_pct: float (default 30.0) — min % drop from high to consider
+        drawdown_max_pct: float (default 45.0) — max % drop (avoid falling knives)
+        high_lookback: int (default 120) — bars to find the recent high
+        no_new_low_bars: int (default 5) — consecutive bars without new low
+        volume_multiple: float (default 1.5) — volume vs 20-bar avg
+        macd_fast: int (default 12)
+        macd_slow: int (default 26)
+        macd_signal: int (default 9)
+        interval: str (default "D")
+    """
+
+    async def evaluate(self, symbol: str, client: BybitClient, market_data=None) -> JudgmentResult:
+        interval = self.params.get("interval", "D")
+        high_lookback = self.params.get("high_lookback", 120)
+        macd_slow = self.params.get("macd_slow", 26)
+        macd_signal = self.params.get("macd_signal", 9)
+        limit = max(high_lookback, macd_slow + macd_signal + 15) + 10
+
+        _, highs, lows, closes, volumes = await _get_ohlcv(
+            symbol, client, market_data, interval, limit,
+        )
+
+        if len(closes) < macd_slow + macd_signal + 2:
+            return JudgmentResult(signal=Signal.HOLD, reason="insufficient data for BNF")
+
+        # --- Condition 1: Deep drawdown from recent high ---
+        drawdown_pct = Decimal(str(self.params.get("drawdown_pct", 30.0)))
+        drawdown_max_pct = Decimal(str(self.params.get("drawdown_max_pct", 45.0)))
+        recent_high = max(highs[-high_lookback:])
+        current_price = closes[-1]
+
+        if recent_high == 0:
+            return JudgmentResult(signal=Signal.HOLD, reason="no price data")
+
+        drop_pct = (recent_high - current_price) / recent_high * 100
+
+        if drop_pct < drawdown_pct:
+            return JudgmentResult(
+                signal=Signal.HOLD,
+                reason=f"drawdown {float(drop_pct):.1f}% < {float(drawdown_pct)}% threshold",
+            )
+        if drop_pct > drawdown_max_pct:
+            return JudgmentResult(
+                signal=Signal.HOLD,
+                reason=f"drawdown {float(drop_pct):.1f}% exceeds {float(drawdown_max_pct)}% max — falling knife",
+            )
+
+        # --- Condition 2: Volume surge ---
+        vol_mult = Decimal(str(self.params.get("volume_multiple", 1.5)))
+        avg_vol = ind.calc_sma(volumes, 20)
+        vol_ok = avg_vol > 0 and volumes[-1] >= avg_vol * vol_mult
+
+        if not vol_ok:
+            return JudgmentResult(
+                signal=Signal.HOLD,
+                reason=f"drawdown OK ({float(drop_pct):.1f}%) but volume not surging",
+            )
+
+        # --- Condition 3: No new low for N bars ---
+        no_new_low_bars = self.params.get("no_new_low_bars", 5)
+        if len(lows) >= no_new_low_bars + 1:
+            recent_bottom = min(lows[-(no_new_low_bars + 1):-1])  # low before current window
+            has_new_low = any(l < recent_bottom for l in lows[-no_new_low_bars:])
+        else:
+            has_new_low = False
+
+        if has_new_low:
+            return JudgmentResult(
+                signal=Signal.HOLD,
+                reason=f"drawdown + volume OK but still making new lows",
+            )
+
+        # --- Condition 4: MACD histogram turns positive ---
+        macd_fast = self.params.get("macd_fast", 12)
+        _, _, hist = ind.calc_macd(closes, macd_fast, macd_slow, macd_signal)
+        _, _, prev_hist = ind.calc_macd(closes[:-1], macd_fast, macd_slow, macd_signal)
+
+        if not (hist > 0 and prev_hist <= 0):
+            return JudgmentResult(
+                signal=Signal.HOLD,
+                reason=f"drawdown + volume + support OK, but MACD histogram not flipping positive (hist={float(hist):.4f})",
+            )
+
+        # --- All 4 conditions met → LONG ---
+        confidence = min(1.0, float(drop_pct / 50))  # deeper dip → higher confidence
+        return JudgmentResult(
+            signal=Signal.LONG,
+            confidence=confidence,
+            reason=(
+                f"BNF dip buy: {float(drop_pct):.1f}% drawdown, "
+                f"vol {float(volumes[-1] / avg_vol):.1f}x avg, "
+                f"no new low {no_new_low_bars} bars, MACD flipped positive"
+            ),
+        )

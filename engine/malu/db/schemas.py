@@ -36,6 +36,7 @@ class TradeHistoryDB(BaseModel):
     status: str = "New"
     pnl: Decimal | None = None
     fee: Decimal | None = None
+    reason: str | None = None  # judgment/defense reason for the trade
     raw_response: dict | None = None
     created_at: datetime | None = None
     filled_at: datetime | None = None

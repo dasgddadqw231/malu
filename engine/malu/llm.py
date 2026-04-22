@@ -18,7 +18,7 @@ STRATEGY_SCHEMA = """\
 {
   "description": "전략에 대한 간단한 설명 (한글)",
   "entry": {
-    "module": "<bb_rsi | bb_squeeze | ema_cross | macd_cross | rsi_divergence>",
+    "module": "<bb_rsi | bb_squeeze | ema_cross | macd_cross | rsi_divergence | bnf_dip_buy>",
     "params": {
       // bb_rsi params:
       //   bb_period: int 10-50 (default 20), bb_std: float 1.0-3.0 (default 2.0),
@@ -37,6 +37,12 @@ STRATEGY_SCHEMA = """\
       // rsi_divergence params:
       //   rsi_period: int 7-28 (default 14), lookback: int 10-50 (default 20),
       //   min_bars_between: int 3-10 (default 5), confirmation: bool (default true)
+      // bnf_dip_buy params (BNF-style dip buying, best on "D" or "240"):
+      //   drawdown_pct: float 20-50 (default 30), drawdown_max_pct: float 30-60 (default 45),
+      //   high_lookback: int 60-200 (default 120), no_new_low_bars: int 3-10 (default 5),
+      //   volume_multiple: float 1.2-3.0 (default 1.5),
+      //   macd_fast: int 5-20 (default 12), macd_slow: int 15-40 (default 26),
+      //   macd_signal: int 5-15 (default 9)
       // ALL modules: interval: str (default "15", options: "1","5","15","60","240","D")
     }
   },
@@ -128,7 +134,7 @@ You help the user iteratively build and refine their MODULAR trading strategy th
 You have deep expertise in quantitative trading, risk management, and crypto market microstructure.
 
 The strategy is built from independent modules that can be swapped:
-- Entry module: determines WHEN to enter (bb_rsi, bb_squeeze, ema_cross, macd_cross, rsi_divergence)
+- Entry module: determines WHEN to enter (bb_rsi, bb_squeeze, ema_cross, macd_cross, rsi_divergence, bnf_dip_buy)
 - Exit module: determines WHEN to exit (fixed_pct, atr_stop, trailing_atr, time_stop)
 - Sizing module: determines HOW MUCH to trade (fixed_fraction, risk_based, volatility_adjusted)
 - Filter modules: determine IF trading is allowed (trend_filter, regime_filter, volatility_filter)

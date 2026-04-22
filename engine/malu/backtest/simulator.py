@@ -7,11 +7,26 @@ from math import sqrt
 
 from malu.backtest.data import FundingRecord, HistoricalCandle, HistoricalDataFetcher
 from malu.exchange.bybit_client import BybitClient
-from malu.strategy.base import Signal
-from malu.strategy.judgment import BBRSIJudgment
+from malu.strategy.base import JudgmentModule, Signal
 from malu.utils.logger import get_logger
 
 log = get_logger("backtest.simulator")
+
+# Lazy import to avoid circular dependency
+def _get_judgment_class(module_name: str) -> type[JudgmentModule]:
+    from malu.strategy.judgment import (
+        BBRSIJudgment, BBSqueezeJudgment, EMACrossJudgment,
+        MACDCrossJudgment, RSIDivergenceJudgment,
+    )
+    registry: dict[str, type[JudgmentModule]] = {
+        "bb_rsi": BBRSIJudgment,
+        "bb_reversal": BBRSIJudgment,
+        "bb_squeeze": BBSqueezeJudgment,
+        "ema_cross": EMACrossJudgment,
+        "macd_cross": MACDCrossJudgment,
+        "rsi_divergence": RSIDivergenceJudgment,
+    }
+    return registry.get(module_name, BBRSIJudgment)
 
 # Bybit funding timestamps: 00:00, 08:00, 16:00 UTC (every 8 hours)
 _FUNDING_INTERVAL_MS = 8 * 60 * 60 * 1000
@@ -68,14 +83,16 @@ class _OpenPosition:
 
 
 class BacktestSimulator:
-    """Bar-by-bar backtesting engine reusing BBRSIJudgment logic."""
+    """Bar-by-bar backtesting engine supporting all judgment modules."""
 
     def __init__(self, config: BacktestConfig):
         self.config = config
 
         # Extract strategy params (same format as BotConfig.strategy_config)
         judgment_cfg = config.strategy_config.get("judgment", {})
-        self.judgment = BBRSIJudgment(judgment_cfg.get("params", {}))
+        module_name = judgment_cfg.get("module", "bb_rsi")
+        judgment_cls = _get_judgment_class(module_name)
+        self.judgment = judgment_cls(judgment_cfg.get("params", {}))
 
         defense_cfg = config.strategy_config.get("defense", {})
         defense_params = defense_cfg.get("params", {})
@@ -85,6 +102,14 @@ class BacktestSimulator:
         action_cfg = config.strategy_config.get("action", {})
         action_params = action_cfg.get("params", {})
         self.position_size_pct = Decimal(str(action_params.get("position_size_pct", 95)))
+
+    def run_from_candles(
+        self,
+        candles: list[HistoricalCandle],
+        funding_rates: list[FundingRecord],
+    ) -> BacktestResult:
+        """Run backtest using pre-fetched data (no API calls). Used by optimizer."""
+        return self._simulate(candles, funding_rates)
 
     async def run(self, client: BybitClient) -> BacktestResult:
         start_ms = self._date_to_ms(self.config.start_date)
@@ -97,7 +122,13 @@ class BacktestSimulator:
         funding_rates = await fetcher.fetch_funding_rates(
             self.config.symbol, start_ms, end_ms
         )
+        return self._simulate(candles, funding_rates)
 
+    def _simulate(
+        self,
+        candles: list[HistoricalCandle],
+        funding_rates: list[FundingRecord],
+    ) -> BacktestResult:
         if len(candles) < 25:
             log.warning("insufficient_candles", count=len(candles))
             return BacktestResult(config=self.config, trades=[])
@@ -105,7 +136,7 @@ class BacktestSimulator:
         # Build funding rate lookup: sorted list of (timestamp, rate)
         funding_lookup = [(f.timestamp, f.funding_rate) for f in funding_rates]
 
-        lookback = self.judgment.params.get("bb_period", 20) + 5
+        lookback = self._calc_lookback()
         equity = self.config.initial_capital
         peak_equity = equity
         max_dd = Decimal("0")
@@ -220,6 +251,20 @@ class BacktestSimulator:
         )
 
     # --- Helpers ---
+
+    def _calc_lookback(self) -> int:
+        """Calculate required lookback period based on judgment module params."""
+        p = self.judgment.params
+        # Cover all judgment modules
+        periods = [
+            p.get("bb_period", 20),
+            p.get("slow_period", 21),
+            p.get("slow_ema", 26) + p.get("signal_period", 9),
+            p.get("rsi_period", 14),
+            p.get("lookback", 20),
+            p.get("trend_ema", 0),
+        ]
+        return max(periods) + 10
 
     def _calc_pnl_pct(self, pos: _OpenPosition, current_price: Decimal) -> Decimal:
         if pos.side == "Long":

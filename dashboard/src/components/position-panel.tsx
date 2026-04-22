@@ -3,61 +3,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, Position } from "@/lib/api";
 
-const DEMO_POSITIONS: Position[] = [
-  {
-    symbol: "BTCUSDT",
-    side: "Buy",
-    size: "0.15",
-    entry_price: "84230.50",
-    unrealised_pnl: "342.18",
-    leverage: "10",
-    liq_price: "76420.00",
-    take_profit: "88500.00",
-    stop_loss: "82100.00",
-    source: "bot",
-    bot: { bot_id: "demo-1", name: "ALPHA-1", status: "in_position" },
-  },
-  {
-    symbol: "ETHUSDT",
-    side: "Sell",
-    size: "2.5",
-    entry_price: "1612.40",
-    unrealised_pnl: "-28.75",
-    leverage: "5",
-    liq_price: "1890.00",
-    take_profit: "1480.00",
-    stop_loss: "1660.00",
-    source: "bot",
-    bot: { bot_id: "demo-2", name: "BETA-ETH", status: "defending" },
-  },
-  {
-    symbol: "SOLUSDT",
-    side: "Buy",
-    size: "120",
-    entry_price: "132.85",
-    unrealised_pnl: "186.40",
-    leverage: "3",
-    liq_price: "89.20",
-    take_profit: "155.00",
-    stop_loss: "125.00",
-    source: "manual",
-    bot: null,
-  },
-  {
-    symbol: "DOGEUSDT",
-    side: "Buy",
-    size: "50000",
-    entry_price: "0.1542",
-    unrealised_pnl: "-12.50",
-    leverage: "2",
-    liq_price: "0.0810",
-    take_profit: "0",
-    stop_loss: "0",
-    source: "manual",
-    bot: null,
-  },
-];
-
 export function PositionPanel() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,9 +10,9 @@ export function PositionPanel() {
   const fetchPositions = useCallback(async () => {
     try {
       const data = await api.getPositions();
-      setPositions(data.length > 0 ? data : DEMO_POSITIONS);
+      setPositions(data);
     } catch {
-      setPositions(DEMO_POSITIONS);
+      setPositions([]);
     } finally {
       setLoading(false);
     }

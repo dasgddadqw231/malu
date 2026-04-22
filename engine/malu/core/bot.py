@@ -50,7 +50,7 @@ SIZING_REGISTRY: dict[str, type[SizingModule]] = {}
 
 
 def _populate_registries():
-    from malu.strategy.judgment import BBRSIJudgment, BBSqueezeJudgment, EMACrossJudgment, MACDCrossJudgment, RSIDivergenceJudgment
+    from malu.strategy.judgment import BBRSIJudgment, BBSqueezeJudgment, EMACrossJudgment, MACDCrossJudgment, RSIDivergenceJudgment, BNFDipBuyJudgment
     from malu.strategy.action import MarketOrderAction
     from malu.strategy.defense import FixedPctDefense, TrailingStopDefense, ATRStopDefense, TrailingATRDefense, TimeStopDefense
     from malu.strategy.filters import TrendFilter, RegimeFilter, VolatilityFilter
@@ -62,6 +62,7 @@ def _populate_registries():
     JUDGMENT_REGISTRY["ema_cross"] = EMACrossJudgment
     JUDGMENT_REGISTRY["macd_cross"] = MACDCrossJudgment
     JUDGMENT_REGISTRY["rsi_divergence"] = RSIDivergenceJudgment
+    JUDGMENT_REGISTRY["bnf_dip_buy"] = BNFDipBuyJudgment
 
     ACTION_REGISTRY["market_order"] = MarketOrderAction
 
