@@ -8,6 +8,7 @@ from math import sqrt
 from malu.backtest.data import FundingRecord, HistoricalCandle, HistoricalDataFetcher
 from malu.exchange.bybit_client import BybitClient
 from malu.strategy.base import JudgmentModule, Signal
+from malu.strategy import indicators as ind
 from malu.utils.logger import get_logger
 
 log = get_logger("backtest.simulator")
@@ -35,10 +36,11 @@ _FUNDING_INTERVAL_MS = 8 * 60 * 60 * 1000
 @dataclass
 class BacktestConfig:
     symbol: str
-    interval: str = "15"
+    interval: str = "60"
     start_date: str = ""  # YYYY-MM-DD
     end_date: str = ""    # YYYY-MM-DD
     initial_capital: Decimal = Decimal("10000")
+    leverage: int = 1
     strategy_config: dict = field(default_factory=dict)
     slippage_bps: int = 5        # basis points
     fee_rate: Decimal = Decimal("0.00055")  # Bybit taker 0.055%
@@ -83,17 +85,19 @@ class _OpenPosition:
 
 
 class BacktestSimulator:
-    """Bar-by-bar backtesting engine supporting all judgment modules."""
+    """Bar-by-bar backtesting engine with multi-timeframe and swing S/R support."""
 
     def __init__(self, config: BacktestConfig):
         self.config = config
+        self.leverage = Decimal(str(config.leverage))
 
-        # Extract strategy params (same format as BotConfig.strategy_config)
+        # --- Judgment ---
         judgment_cfg = config.strategy_config.get("judgment", {})
         module_name = judgment_cfg.get("module", "bb_rsi")
         judgment_cls = _get_judgment_class(module_name)
         self.judgment = judgment_cls(judgment_cfg.get("params", {}))
 
+        # --- Defense ---
         defense_cfg = config.strategy_config.get("defense", {})
         defense_params = defense_cfg.get("params", {})
         self.defense_module = defense_cfg.get("module", "fixed_pct")
@@ -110,26 +114,34 @@ class BacktestSimulator:
         # Trailing ATR params
         self.trailing_activate_pct = Decimal(str(defense_params.get("activate_after_pct", 1.0)))
 
+        # Swing SR defense params
+        self.swing_lookback = defense_params.get("swing_lookback", 50)
+        self.swing_left_bars = defense_params.get("swing_left_bars", 5)
+        self.swing_right_bars = defense_params.get("swing_right_bars", 2)
+        self.sl_buffer_pct = Decimal(str(defense_params.get("sl_buffer_pct", 0.2))) / 100
+        self.min_rr = Decimal(str(defense_params.get("min_rr", 2.0)))
+
+        # --- Action ---
         action_cfg = config.strategy_config.get("action", {})
         action_params = action_cfg.get("params", {})
-        self.position_size_pct = Decimal(str(action_params.get("position_size_pct", 95)))
+        self.position_size_pct = Decimal(str(action_params.get("position_size_pct", 100)))
 
-        # --- Filter support: trend filter ---
+        # --- Filter support: trend filter (supports daily or 4H) ---
         self.trend_filter_enabled = False
-        self.trend_ema_period = 200
-        self.trend_interval = "D"
+        self.trend_ema_period = 50
+        self.trend_interval = "240"  # default 4H
         filters_cfg = config.strategy_config.get("filters", [])
         for f_cfg in filters_cfg:
             if f_cfg.get("module") == "trend_filter":
                 self.trend_filter_enabled = True
-                self.trend_ema_period = f_cfg.get("params", {}).get("ema_period", 200)
-                self.trend_interval = f_cfg.get("params", {}).get("interval", "D")
+                self.trend_ema_period = f_cfg.get("params", {}).get("ema_period", 50)
+                self.trend_interval = f_cfg.get("params", {}).get("interval", "240")
 
         # --- Consecutive loss cooldown ---
         self.max_consecutive_losses = config.strategy_config.get(
             "max_consecutive_losses", 3
         )
-        self.cooldown_bars = config.strategy_config.get("cooldown_bars", 48)  # 48 bars = 12h on 15m
+        self.cooldown_bars = config.strategy_config.get("cooldown_bars", 12)  # 12 bars = 12h on 1h
 
     def run_from_candles(
         self,
@@ -151,40 +163,54 @@ class BacktestSimulator:
             self.config.symbol, start_ms, end_ms
         )
 
-        # Fetch daily candles for trend filter (with lookback warmup)
-        daily_candles: list[HistoricalCandle] | None = None
+        # Fetch HTF candles for trend filter (with lookback warmup)
+        htf_candles: list[HistoricalCandle] | None = None
         if self.trend_filter_enabled:
-            warmup_days = self.trend_ema_period + 30  # extra buffer
-            warmup_ms = warmup_days * 86_400_000
-            daily_candles = await fetcher.fetch_klines(
-                self.config.symbol, "D", start_ms - warmup_ms, end_ms
+            warmup_bars = self.trend_ema_period + 30
+            interval_ms = int(self.trend_interval) * 60 * 1000
+            warmup_ms = warmup_bars * interval_ms
+            htf_candles = await fetcher.fetch_klines(
+                self.config.symbol, self.trend_interval,
+                start_ms - warmup_ms, end_ms
             )
-            log.info("trend_filter_data", daily_bars=len(daily_candles),
-                     ema_period=self.trend_ema_period)
+            log.info("trend_filter_data", htf_bars=len(htf_candles),
+                     ema_period=self.trend_ema_period, interval=self.trend_interval)
 
-        return self._simulate(candles, funding_rates, daily_candles=daily_candles)
+        return self._simulate(candles, funding_rates, htf_candles=htf_candles)
 
     def _simulate(
         self,
         candles: list[HistoricalCandle],
         funding_rates: list[FundingRecord],
-        daily_candles: list[HistoricalCandle] | None = None,
+        htf_candles: list[HistoricalCandle] | None = None,
     ) -> BacktestResult:
         if len(candles) < 25:
             log.warning("insufficient_candles", count=len(candles))
             return BacktestResult(config=self.config, trades=[])
 
-        # Build funding rate lookup: sorted list of (timestamp, rate)
+        # Build funding rate lookup
         funding_lookup = [(f.timestamp, f.funding_rate) for f in funding_rates]
 
-        # Build daily EMA for trend filter
-        daily_ema_cache: dict[int, Decimal] = {}
+        # Build HTF EMA for trend filter (aggregate from main candles if no HTF data)
+        htf_ema_cache: dict[int, Decimal] = {}
         if self.trend_filter_enabled:
-            # Prefer dedicated daily candles (with proper warmup) over aggregation
-            source = daily_candles if daily_candles else candles
-            daily_ema_cache = self._build_daily_ema(source)
-            log.info("trend_filter_ema", days_available=len(daily_ema_cache),
+            source = htf_candles if htf_candles else candles
+            htf_ema_cache = self._build_htf_ema(source)
+            log.info("trend_filter_ema", bars_available=len(htf_ema_cache),
                      required=self.trend_ema_period)
+
+        # Precompute all swing highs/lows for the entire series (swing_sr optimization)
+        all_highs = [c.high for c in candles]
+        all_lows = [c.low for c in candles]
+        precomputed_swing_highs: list[tuple[int, Decimal]] | None = None
+        precomputed_swing_lows: list[tuple[int, Decimal]] | None = None
+        if self.defense_module == "swing_sr":
+            precomputed_swing_highs = ind.find_swing_highs(
+                all_highs, self.swing_left_bars, self.swing_right_bars
+            )
+            precomputed_swing_lows = ind.find_swing_lows(
+                all_lows, self.swing_left_bars, self.swing_right_bars
+            )
 
         lookback = self._calc_lookback()
         equity = self.config.initial_capital
@@ -197,9 +223,9 @@ class BacktestSimulator:
         consecutive_losses = 0
         cooldown_remaining = 0
 
-        # ATR/trailing state
-        atr_stop_price: Decimal | None = None
-        atr_tp_price: Decimal | None = None
+        # Price-level stop/tp state (used by atr_stop, trailing_atr, swing_sr)
+        stop_price: Decimal | None = None
+        tp_price: Decimal | None = None
         trailing_high: Decimal | None = None
         trailing_low: Decimal | None = None
         trailing_active = False
@@ -222,45 +248,44 @@ class BacktestSimulator:
                         should_close = True
                         reason = f"take_profit: {pnl_pct:.2f}%"
 
-                elif self.defense_module == "atr_stop":
+                elif self.defense_module in ("atr_stop", "swing_sr"):
+                    # Both use absolute price levels for SL/TP
                     if position.side == "Long":
-                        if bar.close <= atr_stop_price:
+                        if bar.close <= stop_price:
                             pnl_pct = self._calc_pnl_pct(position, bar.close)
                             should_close = True
-                            reason = f"atr_stop_loss: {pnl_pct:.2f}% (stop={float(atr_stop_price):.0f})"
-                        elif bar.close >= atr_tp_price:
+                            reason = f"{self.defense_module}_sl: {pnl_pct:.2f}% (stop={float(stop_price):.0f})"
+                        elif bar.close >= tp_price:
                             pnl_pct = self._calc_pnl_pct(position, bar.close)
                             should_close = True
-                            reason = f"atr_take_profit: {pnl_pct:.2f}% (tp={float(atr_tp_price):.0f})"
+                            reason = f"{self.defense_module}_tp: {pnl_pct:.2f}% (tp={float(tp_price):.0f})"
                     else:
-                        if bar.close >= atr_stop_price:
+                        if bar.close >= stop_price:
                             pnl_pct = self._calc_pnl_pct(position, bar.close)
                             should_close = True
-                            reason = f"atr_stop_loss: {pnl_pct:.2f}% (stop={float(atr_stop_price):.0f})"
-                        elif bar.close <= atr_tp_price:
+                            reason = f"{self.defense_module}_sl: {pnl_pct:.2f}% (stop={float(stop_price):.0f})"
+                        elif bar.close <= tp_price:
                             pnl_pct = self._calc_pnl_pct(position, bar.close)
                             should_close = True
-                            reason = f"atr_take_profit: {pnl_pct:.2f}% (tp={float(atr_tp_price):.0f})"
+                            reason = f"{self.defense_module}_tp: {pnl_pct:.2f}% (tp={float(tp_price):.0f})"
 
                 elif self.defense_module == "trailing_atr":
                     pnl_pct = self._calc_pnl_pct(position, bar.close)
-                    # First check fixed SL (always active)
                     if pnl_pct <= -self.max_loss_pct:
                         should_close = True
                         reason = f"trailing_stop_loss: {pnl_pct:.2f}%"
                     elif trailing_active:
-                        # Update high/low water mark
                         if position.side == "Long":
                             if bar.close > trailing_high:
                                 trailing_high = bar.close
-                            trail_stop = trailing_high - atr_stop_price  # atr_stop_price stores ATR distance
+                            trail_stop = trailing_high - stop_price  # stop_price stores ATR distance
                             if bar.close <= trail_stop:
                                 should_close = True
                                 reason = f"trailing_stop: price {float(bar.close):.0f} <= trail {float(trail_stop):.0f}"
                         else:
                             if bar.close < trailing_low:
                                 trailing_low = bar.close
-                            trail_stop = trailing_low + atr_stop_price
+                            trail_stop = trailing_low + stop_price
                             if bar.close >= trail_stop:
                                 should_close = True
                                 reason = f"trailing_stop: price {float(bar.close):.0f} >= trail {float(trail_stop):.0f}"
@@ -280,8 +305,8 @@ class BacktestSimulator:
                     else:
                         consecutive_losses = 0
                     position = None
-                    atr_stop_price = None
-                    atr_tp_price = None
+                    stop_price = None
+                    tp_price = None
                     trailing_active = False
 
             # --- Apply funding ---
@@ -295,23 +320,63 @@ class BacktestSimulator:
 
             # --- Judgment (only if flat) ---
             if position is None:
-                # Cooldown after consecutive losses
                 if cooldown_remaining > 0:
                     cooldown_remaining -= 1
                 else:
                     result = self.judgment.evaluate_from_candles(window_closes)
 
                     if result.signal in (Signal.LONG, Signal.SHORT):
-                        # Trend filter: check daily EMA direction
+                        # Trend filter: check HTF EMA direction
                         if self.trend_filter_enabled and not self._check_trend_filter(
-                            bar, result.signal, daily_ema_cache
+                            bar, result.signal, htf_ema_cache
                         ):
                             pass  # blocked by trend filter
                         else:
                             side = "Long" if result.signal == Signal.LONG else "Short"
                             entry_price = self._apply_slippage(bar.close, side, entry=True)
+
+                            # --- Calculate SL/TP levels ---
+                            entry_stop = None
+                            entry_tp = None
+
+                            if self.defense_module == "swing_sr":
+                                entry_stop, entry_tp = self._calc_swing_sr_levels_fast(
+                                    all_highs, all_lows, i, entry_price, side,
+                                    precomputed_swing_highs, precomputed_swing_lows,
+                                )
+                                # R:R filter: skip if risk/reward ratio is too low
+                                if entry_stop is not None and entry_tp is not None:
+                                    if side == "Long":
+                                        risk = entry_price - entry_stop
+                                        reward = entry_tp - entry_price
+                                    else:
+                                        risk = entry_stop - entry_price
+                                        reward = entry_price - entry_tp
+
+                                    if risk <= 0 or reward <= 0:
+                                        continue  # invalid levels
+                                    rr = reward / risk
+                                    if rr < self.min_rr:
+                                        continue  # R:R too low, skip
+
+                            elif self.defense_module in ("atr_stop", "trailing_atr"):
+                                atr = self._calc_atr_from_candles(candles, i)
+                                if self.defense_module == "atr_stop":
+                                    if side == "Long":
+                                        entry_stop = entry_price - self.stop_atr_multiple * atr
+                                        entry_tp = entry_price + self.tp_atr_multiple * atr
+                                    else:
+                                        entry_stop = entry_price + self.stop_atr_multiple * atr
+                                        entry_tp = entry_price - self.tp_atr_multiple * atr
+                                else:  # trailing_atr
+                                    entry_stop = self.stop_atr_multiple * atr  # store distance
+                                    trailing_high = entry_price
+                                    trailing_low = entry_price
+                                    trailing_active = False
+
+                            # --- Open position ---
                             budget = equity * self.position_size_pct / 100
-                            qty = budget / entry_price
+                            qty = budget * self.leverage / entry_price
                             entry_fee = qty * entry_price * self.config.fee_rate
                             equity -= entry_fee
 
@@ -321,22 +386,8 @@ class BacktestSimulator:
                                 qty=qty,
                                 entry_time=bar.timestamp,
                             )
-
-                            # Set ATR-based SL/TP levels at entry
-                            if self.defense_module in ("atr_stop", "trailing_atr"):
-                                atr = self._calc_atr_from_candles(candles, i)
-                                if self.defense_module == "atr_stop":
-                                    if side == "Long":
-                                        atr_stop_price = entry_price - self.stop_atr_multiple * atr
-                                        atr_tp_price = entry_price + self.tp_atr_multiple * atr
-                                    else:
-                                        atr_stop_price = entry_price + self.stop_atr_multiple * atr
-                                        atr_tp_price = entry_price - self.tp_atr_multiple * atr
-                                else:  # trailing_atr
-                                    atr_stop_price = self.stop_atr_multiple * atr  # store distance
-                                    trailing_high = entry_price
-                                    trailing_low = entry_price
-                                    trailing_active = False
+                            stop_price = entry_stop
+                            tp_price = entry_tp
 
             # --- Track equity ---
             mark_equity = equity
@@ -396,7 +447,6 @@ class BacktestSimulator:
     def _calc_lookback(self) -> int:
         """Calculate required lookback period based on judgment module params."""
         p = self.judgment.params
-        # Cover all judgment modules
         periods = [
             p.get("bb_period", 20),
             p.get("slow_period", 21),
@@ -405,74 +455,129 @@ class BacktestSimulator:
             p.get("lookback", 20),
             p.get("trend_ema", 0),
         ]
+        # swing SR needs extra lookback for swing detection
+        if self.defense_module == "swing_sr":
+            periods.append(self.swing_lookback + self.swing_left_bars + self.swing_right_bars)
         return max(periods) + 10
 
-    def _build_daily_ema(
+    def _build_htf_ema(
         self, candles: list[HistoricalCandle]
     ) -> dict[int, Decimal]:
-        """Aggregate candles into daily closes and compute EMA.
+        """Build EMA cache from HTF candles.
 
-        Returns a dict mapping each day's start timestamp (00:00 UTC ms)
-        to that day's EMA value.
+        Supports both dedicated HTF candles and aggregation from lower TF.
+        Returns dict mapping HTF bar timestamp to EMA value.
         """
-        from malu.strategy import indicators as ind
+        interval_ms = int(self.trend_interval) * 60 * 1000
 
-        day_ms = 86_400_000
-        daily_closes: dict[int, Decimal] = {}
+        # Aggregate candles into HTF buckets
+        htf_closes: dict[int, Decimal] = {}
         for c in candles:
-            day_start = (c.timestamp // day_ms) * day_ms
-            daily_closes[day_start] = c.close
+            bucket = (c.timestamp // interval_ms) * interval_ms
+            htf_closes[bucket] = c.close  # last close in bucket wins
 
-        sorted_days = sorted(daily_closes.keys())
-        closes_list = [daily_closes[d] for d in sorted_days]
+        sorted_buckets = sorted(htf_closes.keys())
+        closes_list = [htf_closes[b] for b in sorted_buckets]
 
         if len(closes_list) < self.trend_ema_period:
             log.warning("trend_filter_insufficient_data",
-                        days=len(closes_list), required=self.trend_ema_period)
+                        bars=len(closes_list), required=self.trend_ema_period)
             return {}
 
         ema_values = ind.calc_ema(closes_list, self.trend_ema_period)
         result: dict[int, Decimal] = {}
-        for day_ts, ema_val in zip(sorted_days, ema_values):
-            result[day_ts] = ema_val
+        for ts, ema_val in zip(sorted_buckets, ema_values):
+            result[ts] = ema_val
         return result
 
     def _check_trend_filter(
         self,
         bar: HistoricalCandle,
         signal: Signal,
-        daily_ema_cache: dict[int, Decimal],
+        htf_ema_cache: dict[int, Decimal],
     ) -> bool:
-        """Return True if signal is aligned with daily trend."""
-        if not daily_ema_cache:
-            return True  # no data → allow
+        """Return True if signal is aligned with HTF trend."""
+        if not htf_ema_cache:
+            return True
 
-        day_ms = 86_400_000
-        # Use previous day's EMA (current day not yet complete)
-        bar_day = (bar.timestamp // day_ms) * day_ms
-        prev_day = bar_day - day_ms
+        interval_ms = int(self.trend_interval) * 60 * 1000
+        bar_bucket = (bar.timestamp // interval_ms) * interval_ms
+        # Use previous HTF bar's EMA (current bar not yet complete)
+        prev_bucket = bar_bucket - interval_ms
 
-        ema_val = daily_ema_cache.get(prev_day)
+        ema_val = htf_ema_cache.get(prev_bucket)
         if ema_val is None:
-            # Try current day if previous not available
-            ema_val = daily_ema_cache.get(bar_day)
+            ema_val = htf_ema_cache.get(bar_bucket)
         if ema_val is None:
             return True
 
         if signal == Signal.LONG and bar.close < ema_val:
-            return False  # price below EMA, long blocked
+            return False
         if signal == Signal.SHORT and bar.close > ema_val:
-            return False  # price above EMA, short blocked
+            return False
         return True
+
+    def _calc_swing_sr_levels_fast(
+        self,
+        all_highs: list[Decimal],
+        all_lows: list[Decimal],
+        bar_idx: int,
+        entry_price: Decimal,
+        side: str,
+        swing_highs: list[tuple[int, Decimal]],
+        swing_lows: list[tuple[int, Decimal]],
+    ) -> tuple[Decimal | None, Decimal | None]:
+        """Calculate structure-based SL/TP levels using precomputed swing points.
+
+        Uses swing points when available, falls back to rolling min/max.
+        """
+        lookback_start = max(0, bar_idx - self.swing_lookback)
+        if bar_idx < 10:
+            return None, None
+
+        # Filter swing points within lookback window and before current bar
+        recent_sh = [(idx, p) for idx, p in swing_highs
+                     if lookback_start <= idx < bar_idx]
+        recent_sl = [(idx, p) for idx, p in swing_lows
+                     if lookback_start <= idx < bar_idx]
+
+        # Rolling min/max as fallback
+        window_lows = all_lows[lookback_start:bar_idx]
+        window_highs = all_highs[lookback_start:bar_idx]
+        rolling_low = min(window_lows) if window_lows else entry_price
+        rolling_high = max(window_highs) if window_highs else entry_price
+
+        if side == "Long":
+            support = [p for _, p in recent_sl if p < entry_price]
+            sl_level = support[-1] if support else rolling_low
+            stop = sl_level * (1 - self.sl_buffer_pct)
+            resistance = [p for _, p in recent_sh if p > entry_price]
+            if resistance:
+                tp = resistance[0]
+            elif rolling_high > entry_price:
+                tp = rolling_high
+            else:
+                tp = entry_price + (entry_price - stop) * self.min_rr
+        else:
+            resistance = [p for _, p in recent_sh if p > entry_price]
+            sl_level = resistance[0] if resistance else rolling_high
+            stop = sl_level * (1 + self.sl_buffer_pct)
+            support = [p for _, p in recent_sl if p < entry_price]
+            if support:
+                tp = support[-1]
+            elif rolling_low < entry_price:
+                tp = rolling_low
+            else:
+                tp = entry_price - (stop - entry_price) * self.min_rr
+
+        return stop, tp
 
     def _calc_atr_from_candles(self, candles: list[HistoricalCandle], bar_idx: int) -> Decimal:
         """Calculate ATR at bar_idx using recent candle data."""
-        from malu.strategy import indicators as ind
         period = self.atr_period
         start = max(0, bar_idx - period - 1)
         window = candles[start:bar_idx + 1]
         if len(window) < period:
-            # Fallback: 2% of close price
             return candles[bar_idx].close * Decimal("0.02")
         highs = [c.high for c in window]
         lows = [c.low for c in window]
@@ -505,8 +610,6 @@ class BacktestSimulator:
         exit_price = self._apply_slippage(bar.close, pos.side, entry=False)
         pnl = self._unrealised_pnl(pos, exit_price)
         exit_fee = pos.qty * exit_price * self.config.fee_rate
-        # entry fee was already deducted from equity; only record exit fee here
-        # But for trade record, include total round-trip fee
         entry_fee = pos.qty * pos.entry_price * self.config.fee_rate
         total_fee = entry_fee + exit_fee
 
@@ -535,7 +638,6 @@ class BacktestSimulator:
         for f_ts, f_rate in funding_lookup:
             if prev_ts < f_ts <= curr_ts:
                 position_value = pos.qty * pos.entry_price
-                # Long pays positive rate, short receives positive rate
                 if pos.side == "Long":
                     total += position_value * f_rate
                 else:

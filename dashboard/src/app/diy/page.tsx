@@ -49,8 +49,8 @@ export default function DiyPage() {
   // Backtest state
   const [backtestSigId, setBacktestSigId] = useState<string | null>(null);
   const [btSymbol, setBtSymbol] = useState("BTCUSDT");
-  const [btStart, setBtStart] = useState("2025-01-01");
-  const [btEnd, setBtEnd] = useState("2025-03-01");
+  const [btStart, setBtStart] = useState("2026-01-01");
+  const [btEnd, setBtEnd] = useState("2026-12-31");
   const [btCapital, setBtCapital] = useState(10000);
   const [btRunning, setBtRunning] = useState(false);
 

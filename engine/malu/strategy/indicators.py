@@ -231,6 +231,54 @@ def calc_obv(closes: list[Decimal], volumes: list[Decimal]) -> list[Decimal]:
 Signal_str = str  # "long", "short", "hold"
 
 
+def find_swing_highs(
+    highs: list[Decimal], left_bars: int = 5, right_bars: int = 2
+) -> list[tuple[int, Decimal]]:
+    """Find swing high points (local maxima).
+
+    A swing high at index i requires:
+      highs[i] >= all highs in [i-left_bars, i+right_bars]
+
+    Returns list of (index, price) sorted by index.
+    """
+    results: list[tuple[int, Decimal]] = []
+    for i in range(left_bars, len(highs) - right_bars):
+        is_swing = True
+        for j in range(i - left_bars, i + right_bars + 1):
+            if j == i:
+                continue
+            if highs[j] > highs[i]:
+                is_swing = False
+                break
+        if is_swing:
+            results.append((i, highs[i]))
+    return results
+
+
+def find_swing_lows(
+    lows: list[Decimal], left_bars: int = 5, right_bars: int = 2
+) -> list[tuple[int, Decimal]]:
+    """Find swing low points (local minima).
+
+    A swing low at index i requires:
+      lows[i] <= all lows in [i-left_bars, i+right_bars]
+
+    Returns list of (index, price) sorted by index.
+    """
+    results: list[tuple[int, Decimal]] = []
+    for i in range(left_bars, len(lows) - right_bars):
+        is_swing = True
+        for j in range(i - left_bars, i + right_bars + 1):
+            if j == i:
+                continue
+            if lows[j] < lows[i]:
+                is_swing = False
+                break
+        if is_swing:
+            results.append((i, lows[i]))
+    return results
+
+
 def detect_ema_cross(
     closes: list[Decimal], fast_period: int, slow_period: int
 ) -> tuple[Signal_str, bool]:

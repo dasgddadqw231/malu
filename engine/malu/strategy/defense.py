@@ -221,6 +221,94 @@ class TrailingATRDefense(DefenseModule):
         self._atr_value = ind.calc_atr(highs, lows, closes, atr_period)
 
 
+class SwingSRDefense(DefenseModule):
+    """Swing Support/Resistance based SL/TP (swing_sr).
+
+    At first check, finds nearest swing low (support) and swing high (resistance)
+    to set SL/TP levels.
+
+    Params:
+        swing_lookback: int (default 50)
+        swing_left_bars: int (default 5)
+        swing_right_bars: int (default 2)
+        sl_buffer_pct: float (default 0.2, % buffer beyond swing point)
+        interval: str (default "60")
+    """
+
+    def __init__(self, params: dict):
+        super().__init__(params)
+        self._stop_price: Decimal | None = None
+        self._tp_price: Decimal | None = None
+        self._entry_symbol: str | None = None
+
+    async def check(self, position: PositionInfo | None, client: BybitClient, market_data=None) -> DefenseResult:
+        if position is None or position.size == 0:
+            self._stop_price = None
+            self._tp_price = None
+            self._entry_symbol = None
+            return DefenseResult(should_close=False)
+
+        if self._stop_price is None or self._entry_symbol != position.symbol:
+            await self._calc_levels(position, client, market_data)
+            self._entry_symbol = position.symbol
+
+        current_price = position.entry_price
+        if market_data:
+            ticker = market_data.get_ticker(position.symbol)
+            if ticker and ticker.mark_price > 0:
+                current_price = ticker.mark_price
+
+        if position.side == Side.BUY:
+            if current_price <= self._stop_price:
+                pnl_pct = (current_price - position.entry_price) / position.entry_price * 100
+                return DefenseResult(should_close=True, reason=f"swing SL hit at {current_price}, PnL {pnl_pct:.2f}%")
+            if current_price >= self._tp_price:
+                pnl_pct = (current_price - position.entry_price) / position.entry_price * 100
+                return DefenseResult(should_close=True, reason=f"swing TP hit at {current_price}, PnL {pnl_pct:.2f}%")
+        else:
+            if current_price >= self._stop_price:
+                pnl_pct = (position.entry_price - current_price) / position.entry_price * 100
+                return DefenseResult(should_close=True, reason=f"swing SL hit at {current_price}, PnL {pnl_pct:.2f}%")
+            if current_price <= self._tp_price:
+                pnl_pct = (position.entry_price - current_price) / position.entry_price * 100
+                return DefenseResult(should_close=True, reason=f"swing TP hit at {current_price}, PnL {pnl_pct:.2f}%")
+
+        return DefenseResult(should_close=False)
+
+    async def _calc_levels(self, position: PositionInfo, client: BybitClient, market_data):
+        interval = self.params.get("interval", "60")
+        lookback = self.params.get("swing_lookback", 50)
+        left_bars = self.params.get("swing_left_bars", 5)
+        right_bars = self.params.get("swing_right_bars", 2)
+        sl_buffer = Decimal(str(self.params.get("sl_buffer_pct", 0.2))) / 100
+
+        from malu.strategy.judgment import _get_ohlcv
+        _, highs, lows, _, _ = await _get_ohlcv(
+            position.symbol, client, market_data, interval, lookback + left_bars + right_bars
+        )
+
+        swing_highs = ind.find_swing_highs(highs, left_bars, right_bars)
+        swing_lows = ind.find_swing_lows(lows, left_bars, right_bars)
+
+        entry = position.entry_price
+
+        if position.side == Side.BUY:
+            support = [p for _, p in swing_lows if p < entry]
+            sl_level = support[-1] if support else entry * Decimal("0.97")
+            self._stop_price = sl_level * (1 - sl_buffer)
+            resistance = [p for _, p in swing_highs if p > entry]
+            self._tp_price = resistance[0] if resistance else entry * Decimal("1.06")
+        else:
+            resistance = [p for _, p in swing_highs if p > entry]
+            sl_level = resistance[0] if resistance else entry * Decimal("1.03")
+            self._stop_price = sl_level * (1 + sl_buffer)
+            support = [p for _, p in swing_lows if p < entry]
+            self._tp_price = support[-1] if support else entry * Decimal("0.94")
+
+        log.info("swing_sr_levels_set", symbol=position.symbol,
+                 stop=str(self._stop_price), tp=str(self._tp_price))
+
+
 class TimeStopDefense(DefenseModule):
     """Time-based exit (time_stop).
 

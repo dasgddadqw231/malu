@@ -1,26 +1,26 @@
 {
-  "name": "최적화_bb_rsi_15m",
+  "name": "BB_RSI_1H_3x_v3",
   "symbol": "BTCUSDT",
   "category": "linear",
   "seed_budget": 10000,
-  "leverage": 1,
+  "leverage": 3,
   "cycle_interval": 5.0,
   "strategy_config": {
     "judgment": {
       "module": "bb_rsi",
       "params": {
-        "bb_period": 12,
-        "bb_std": 1.8,
-        "rsi_period": 10,
+        "bb_period": 20,
+        "bb_std": 2.0,
+        "rsi_period": 7,
         "rsi_oversold": 20,
         "rsi_overbought": 70,
-        "interval": "15"
+        "interval": "60"
       }
     },
     "defense": {
       "module": "fixed_pct",
       "params": {
-        "stop_loss_pct": 7.0,
+        "stop_loss_pct": 5.0,
         "take_profit_pct": 8.0
       }
     },
@@ -33,7 +33,7 @@
     "sizing": null,
     "filters": [],
     "max_consecutive_losses": 3,
-    "cooldown_bars": 48
+    "cooldown_bars": 12
   },
   "bot_controls": {
     "daily_loss_limit_pct": 5.0,
