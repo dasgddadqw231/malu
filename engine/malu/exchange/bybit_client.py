@@ -83,6 +83,9 @@ class BybitClient:
         params: dict = {"category": category.value}
         if symbol:
             params["symbol"] = symbol
+        else:
+            # Bybit V5 requires symbol OR settleCoin when querying the whole book.
+            params["settleCoin"] = "USD" if category == Category.INVERSE else "USDT"
         result = await self._run_sync(self._client.get_positions, **params)
         positions = []
         for p in result["result"]["list"]:
