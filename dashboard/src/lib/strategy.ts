@@ -45,7 +45,7 @@ export const MODULE_CATALOG: {
       { name: "ema_cross", desc: "EMA 골든/데드 크로스" },
       { name: "macd_cross", desc: "MACD 시그널 교차" },
       { name: "rsi_divergence", desc: "RSI 다이버전스" },
-      { name: "bnf_dip_buy", desc: "급락 저점 매수" },
+      { name: "bnf_dip_buy", desc: "급락 저점 매수 (백테스트 미지원)" },
     ],
   },
   {
@@ -55,7 +55,7 @@ export const MODULE_CATALOG: {
       { name: "fixed_pct", desc: "고정 % 손절/익절" },
       { name: "atr_stop", desc: "ATR 기반 손절/익절" },
       { name: "trailing_atr", desc: "ATR 트레일링 스탑" },
-      { name: "time_stop", desc: "시간 기반 청산" },
+      { name: "time_stop", desc: "시간 기반 청산 (백테스트 미지원)" },
     ],
   },
   {
@@ -63,8 +63,8 @@ export const MODULE_CATALOG: {
     key: "filters",
     modules: [
       { name: "trend_filter", desc: "상위 추세 필터" },
-      { name: "regime_filter", desc: "장세(추세/횡보) 판별" },
-      { name: "volatility_filter", desc: "변동성 필터" },
+      { name: "regime_filter", desc: "장세 판별 (백테스트 미지원)" },
+      { name: "volatility_filter", desc: "변동성 필터 (백테스트 미지원)" },
     ],
   },
   {
