@@ -137,7 +137,7 @@ function BacktestContent() {
       <header className="flex items-end justify-between mb-8">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <Link href="/diy" className="text-jarvis/50 hover:text-jarvis transition-colors">
+            <Link href="/" className="text-jarvis/50 hover:text-jarvis transition-colors">
               <ArrowLeftIcon className="size-5" />
             </Link>
             <h1 className="text-3xl font-bold tracking-[0.2em] font-mono text-jarvis text-glow">

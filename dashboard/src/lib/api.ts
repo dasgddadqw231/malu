@@ -76,71 +76,6 @@ export interface TradeHistory {
   created_at: string;
 }
 
-// DIY Types
-export interface DiyTrade {
-  id: string;
-  bybit_order_id: string;
-  symbol: string;
-  side: string;
-  order_type: string;
-  qty: string;
-  avg_price: string | null;
-  pnl: string | null;
-  fee: string | null;
-  leverage: string;
-  trade_pair_id: string | null;
-  pair_role: string | null;
-  rationale: string | null;
-  tags: string[];
-  filled_at: string | null;
-  created_at: string;
-}
-
-export interface SignatureMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface Signature {
-  id: string;
-  name: string;
-  description: string | null;
-  source_trade_ids: string[];
-  strategy_config: Record<string, unknown>;
-  rules: Record<string, unknown>[];
-  stats: Record<string, unknown>;
-  is_active: boolean;
-  dataset_id: string | null;
-  messages: SignatureMessage[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SignatureChatResponse {
-  id: string;
-  reply: string;
-  strategy_config: Record<string, unknown>;
-  rules: Record<string, unknown>[];
-  messages: SignatureMessage[];
-}
-
-// Dataset Types
-export interface ManualDataset {
-  id: string;
-  name: string;
-  description: string | null;
-  trade_ids: string[];
-  auto_sync: boolean;
-  sync_symbol: string | null;
-  sync_category: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ManualDatasetWithTrades extends ManualDataset {
-  trades: DiyTrade[];
-}
-
 // Backtest Types
 export interface BacktestRun {
   id: string;
@@ -256,69 +191,6 @@ export const api = {
       method: "POST",
     }),
 
-  // DIY Trading / Signatures
-  syncDiyTrades: (symbol?: string, category?: string) => {
-    const params = new URLSearchParams();
-    if (symbol) params.set("symbol", symbol);
-    if (category) params.set("category", category);
-    return request<{ synced: number }>(`/diy/sync?${params}`, { method: "POST" });
-  },
-
-  listDiyTrades: (symbol?: string) => {
-    const params = symbol ? `?symbol=${symbol}` : "";
-    return request<DiyTrade[]>(`/diy/trades${params}`);
-  },
-
-  updateDiyTrade: (id: string, data: { rationale?: string; tags?: string[] }) =>
-    request<DiyTrade>(`/diy/trades/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
-
-  pairDiyTrades: (entryId: string, exitId: string) =>
-    request<{ pair_id: string }>(`/diy/trades/pair?entry_id=${entryId}&exit_id=${exitId}`, {
-      method: "POST",
-    }),
-
-  listSignatures: () => request<Signature[]>("/diy/signatures"),
-
-  getSignature: (id: string) => request<Signature>(`/diy/signatures/${id}`),
-
-  createSignature: (data: { name: string; description?: string; source_trade_ids: string[]; strategy_config: Record<string, unknown>; rules: Record<string, unknown>[]; stats: Record<string, unknown> }) =>
-    request<Signature>("/diy/signatures", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-
-  updateSignature: (id: string, data: { name?: string; description?: string; strategy_config?: Record<string, unknown>; rules?: Record<string, unknown>[] }) =>
-    request<Signature>(`/diy/signatures/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
-
-  deleteSignature: (id: string) =>
-    request<{ deleted: boolean }>(`/diy/signatures/${id}`, { method: "DELETE" }),
-
-  createSignatureFromPrompt: (name: string, prompt: string, description?: string, sourceTradeIds?: string[]) => {
-    const params = new URLSearchParams({ name, prompt });
-    if (description) params.set("description", description);
-    if (sourceTradeIds?.length) {
-      for (const id of sourceTradeIds) params.append("source_trade_ids", id);
-    }
-    return request<Signature>(`/diy/signatures/from-prompt?${params}`, {
-      method: "POST",
-    });
-  },
-
-  generateSignature: (name: string, tradeIds: string[], description?: string) => {
-    const params = new URLSearchParams({ name });
-    if (description) params.set("description", description);
-    return request<Signature>(`/diy/generate?${params}`, {
-      method: "POST",
-      body: JSON.stringify(tradeIds),
-    });
-  },
-
   // Backtest
   runBacktest: (data: {
     symbol: string;
@@ -333,22 +205,6 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  runBacktestFromSignature: (
-    sigId: string,
-    params: { symbol: string; start_date: string; end_date: string; initial_capital?: number }
-  ) => {
-    const qs = new URLSearchParams({
-      symbol: params.symbol,
-      start_date: params.start_date,
-      end_date: params.end_date,
-    });
-    if (params.initial_capital) qs.set("initial_capital", String(params.initial_capital));
-    return request<{ run_id: string; status: string }>(
-      `/backtest/from-signature/${sigId}?${qs}`,
-      { method: "POST" }
-    );
-  },
-
   getBacktest: (runId: string) => request<BacktestRun>(`/backtest/${runId}`),
 
   listBacktests: () => request<BacktestRun[]>("/backtest"),
@@ -357,59 +213,6 @@ export const api = {
 
   deleteBacktest: (runId: string) =>
     request<{ status: string }>(`/backtest/${runId}`, { method: "DELETE" }),
-
-  // Datasets
-  listDatasets: () => request<ManualDataset[]>("/diy/datasets"),
-
-  getDataset: (id: string) => request<ManualDatasetWithTrades>(`/diy/datasets/${id}`),
-
-  createDataset: (data: { name: string; description?: string; trade_ids?: string[]; auto_sync?: boolean; sync_symbol?: string; sync_category?: string }) =>
-    request<ManualDataset>("/diy/datasets", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-
-  updateDataset: (id: string, data: { name?: string; description?: string; auto_sync?: boolean; sync_symbol?: string; add_trade_ids?: string[]; remove_trade_ids?: string[] }) =>
-    request<ManualDataset>(`/diy/datasets/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
-
-  deleteDataset: (id: string) =>
-    request<{ deleted: boolean }>(`/diy/datasets/${id}`, { method: "DELETE" }),
-
-  syncDataset: (id: string) =>
-    request<{ synced: number; added_to_dataset: number }>(`/diy/datasets/${id}/sync`, { method: "POST" }),
-
-  // Signature Chat
-  startSignatureChat: (name: string, message: string, datasetId?: string) => {
-    const body: Record<string, unknown> = { name, message };
-    if (datasetId) body.dataset_id = datasetId;
-    return request<SignatureChatResponse>("/diy/signatures/chat/new", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-  },
-
-  chatWithSignature: (sigId: string, message: string) =>
-    request<SignatureChatResponse>(`/diy/signatures/${sigId}/chat`, {
-      method: "POST",
-      body: JSON.stringify({ message }),
-    }),
-
-  uploadDatasetCsv: async (id: string, file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    const res = await fetch(`${API_BASE}/diy/datasets/${id}/upload`, {
-      method: "POST",
-      body: formData,
-    });
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(error.detail || `API error: ${res.status}`);
-    }
-    return res.json() as Promise<{ uploaded: number; added_to_dataset: number }>;
-  },
 
   // Risk Settings
   getRiskSettings: () => request<RiskSettings>("/risk/settings"),

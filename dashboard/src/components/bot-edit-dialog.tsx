@@ -12,10 +12,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { api, type BotControls } from "@/lib/api";
+import { StrategyEditor } from "@/components/strategy-editor";
+import { validateStrategyJson, DEFAULT_STRATEGY_JSON } from "@/lib/strategy";
 import {
   CoinsIcon,
   ShieldAlertIcon,
-  ClockIcon,
 } from "lucide-react";
 
 // ─── Component ───────────────────────────────────────────────
@@ -35,6 +36,8 @@ export function BotEditDialog({
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [budget, setBudget] = useState("");
+  const [strategyJson, setStrategyJson] = useState(DEFAULT_STRATEGY_JSON);
+  const strategyValid = validateStrategyJson(strategyJson).valid;
 
   // Bot controls state
   const [maxDailyLoss, setMaxDailyLoss] = useState("");
@@ -51,6 +54,9 @@ export function BotEditDialog({
     api.getBot(botId).then((bot) => {
       setName(bot.name);
       setBudget(String(bot.seed_budget));
+      if (bot.strategy_config && Object.keys(bot.strategy_config).length > 0) {
+        setStrategyJson(JSON.stringify(bot.strategy_config, null, 2));
+      }
 
       // Load controls
       const ctrl = bot.bot_controls;
@@ -90,11 +96,17 @@ export function BotEditDialog({
   };
 
   const handleSave = async () => {
+    const v = validateStrategyJson(strategyJson);
+    if (!v.valid || !v.parsed) {
+      alert(v.error ?? "전략 JSON이 올바르지 않습니다.");
+      return;
+    }
     setSaving(true);
     try {
       await api.updateBot(botId, {
         name,
         seed_budget: Number(budget),
+        strategy_config: v.parsed,
         bot_controls: buildControls(),
       });
       onOpenChange(false);
@@ -143,6 +155,12 @@ export function BotEditDialog({
                   className="pl-7 font-mono text-sm bg-jarvis/5 border-jarvis/15"
                 />
               </div>
+            </div>
+
+            {/* Strategy & Triggers */}
+            <div className="pt-3 border-t border-jarvis/10 space-y-3">
+              <Label className="text-xs font-mono text-foreground tracking-[0.15em] uppercase">STRATEGY &amp; TRIGGERS</Label>
+              <StrategyEditor value={strategyJson} onChange={setStrategyJson} />
             </div>
 
             {/* Bot Controls */}
@@ -216,8 +234,8 @@ export function BotEditDialog({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saving || loading}
-            className="bg-jarvis/10 text-jarvis border border-jarvis/30 hover:bg-jarvis/20 font-mono text-xs tracking-[0.15em] uppercase"
+            disabled={saving || loading || !strategyValid}
+            className="bg-jarvis/10 text-jarvis border border-jarvis/30 hover:bg-jarvis/20 font-mono text-xs tracking-[0.15em] uppercase disabled:opacity-30"
           >
             {saving ? "SAVING..." : "SAVE CHANGES"}
           </Button>

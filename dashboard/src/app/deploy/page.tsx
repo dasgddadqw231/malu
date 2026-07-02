@@ -6,12 +6,12 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type Signature, type BotControls } from "@/lib/api";
+import { api, type BotControls } from "@/lib/api";
+import { StrategyEditor } from "@/components/strategy-editor";
+import { DEFAULT_STRATEGY_JSON, validateStrategyJson } from "@/lib/strategy";
 import {
   ArrowLeftIcon,
   RocketIcon,
-  SparklesIcon,
-  WrenchIcon,
   ShieldAlertIcon,
   ClockIcon,
   CoinsIcon,
@@ -66,8 +66,8 @@ export default function DeployPage() {
   const [loading, setLoading] = useState(false);
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [budget, setBudget] = useState("");
-  const [signature, setSignature] = useState<Signature | null>(null);
-  const [signatures, setSignatures] = useState<Signature[]>([]);
+  const [name, setName] = useState("");
+  const [strategyJson, setStrategyJson] = useState(DEFAULT_STRATEGY_JSON);
   const [available, setAvailable] = useState(0);
   const [riskPreset, setRiskPreset] = useState<RiskPreset>("off");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -83,17 +83,23 @@ export default function DeployPage() {
 
   useEffect(() => {
     api.getDashboard().then((d) => setAvailable(Number(d.available_budget))).catch(() => {});
-    api.listSignatures().then(setSignatures).catch(() => {});
   }, []);
 
   const budgetNum = Number(budget) || 0;
 
   const autoName = useMemo(() => {
     const base = symbol.replace("USDT", "");
-    return signature ? `${base} ${signature.name}` : base;
-  }, [symbol, signature]);
+    return name.trim() || `${base} Bot`;
+  }, [symbol, name]);
 
-  const canSubmit = symbol && !!signature;
+  const strategyCheck = useMemo(() => validateStrategyJson(strategyJson), [strategyJson]);
+  const strategyValid = strategyCheck.valid;
+  const judgmentModule = useMemo(() => {
+    const j = strategyCheck.parsed?.judgment as { module?: string } | undefined;
+    return j?.module ?? "—";
+  }, [strategyCheck]);
+
+  const canSubmit = !!symbol && strategyValid;
 
   // Build bot_controls from preset or advanced
   const buildControls = (): BotControls => {
@@ -122,7 +128,8 @@ export default function DeployPage() {
   };
 
   const handleSubmit = async () => {
-    if (!canSubmit || !signature) return;
+    const v = validateStrategyJson(strategyJson);
+    if (!symbol || !v.valid || !v.parsed) return;
     setLoading(true);
     try {
       const controls = buildControls();
@@ -132,7 +139,7 @@ export default function DeployPage() {
         symbol: symbol.toUpperCase(),
         seed_budget: budgetNum,
         cycle_interval: 5,
-        strategy_config: signature.strategy_config as Record<string, unknown>,
+        strategy_config: v.parsed,
         bot_controls: Object.keys(controls).length > 0 ? controls : undefined,
       });
       router.push("/");
@@ -161,7 +168,7 @@ export default function DeployPage() {
             DEPLOY NEW BOT
           </h1>
           <p className="text-xs font-mono text-muted-foreground tracking-[0.15em] uppercase">
-            Select a signature strategy to deploy your bot
+            Configure strategy &amp; triggers, then deploy
           </p>
         </div>
       </div>
@@ -187,12 +194,27 @@ export default function DeployPage() {
                   {s.replace("USDT", "")}
                 </button>
               ))}
+              <Input
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                placeholder="SYMBOL"
+                className="w-32 text-sm font-mono bg-jarvis/5 border-jarvis/15"
+              />
             </div>
           </section>
 
-          {/* Budget */}
+          {/* Name + Budget */}
           <section className="jarvis-card jarvis-corners rounded-lg p-6 space-y-4">
-            <SectionHeader step={2} label="Budget" />
+            <SectionHeader step={2} label="Name & Budget" />
+            <div className="space-y-1.5">
+              <span className="text-xs font-mono text-muted-foreground/70 tracking-wider">NAME</span>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={`${symbol.replace("USDT", "")} Bot`}
+                className="text-sm font-mono bg-jarvis/5 border-jarvis/15"
+              />
+            </div>
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-jarvis/40 text-lg font-mono">$</span>
               <Input
@@ -210,64 +232,15 @@ export default function DeployPage() {
             </p>
           </section>
 
-          {/* Signature selector */}
+          {/* Strategy / Triggers */}
           <section className="jarvis-card jarvis-corners rounded-lg p-6 space-y-4">
-            <SectionHeader step={3} label="Select Signature" sub="Pre-built strategy from your trades or prompts" />
-            {signatures.length === 0 ? (
-              <div className="text-center py-8">
-                <SparklesIcon className="size-8 text-purple-400/30 mx-auto mb-3" />
-                <p className="text-sm font-mono text-muted-foreground mb-2">
-                  No signatures yet
-                </p>
-                <p className="text-xs font-mono text-muted-foreground/80 mb-4">
-                  SIGNATURE 페이지에서 매매내역 또는 자연어로 시그니처를 먼저 만들어주세요
-                </p>
-                <Link
-                  href="/diy"
-                  className="inline-flex items-center gap-2 rounded-lg border border-purple-400/20 bg-purple-400/5 px-4 py-2 text-xs font-mono text-purple-400/70 hover:text-purple-400 hover:border-purple-400/40 transition-all tracking-wider"
-                >
-                  <SparklesIcon className="size-3" />
-                  GO TO SIGNATURES
-                </Link>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {signatures.map((sig) => {
-                  const selected = signature?.id === sig.id;
-                  const stats = sig.stats as Record<string, unknown>;
-                  const isNL = stats.source === "natural_language";
-                  return (
-                    <button
-                      key={sig.id}
-                      type="button"
-                      onClick={() => setSignature(sig)}
-                      className={`flex flex-col items-center gap-2 rounded-lg border p-5 text-center transition-all ${
-                        selected
-                          ? "border-purple-400/40 bg-purple-400/10 shadow-[0_0_20px_rgba(168,85,247,0.1)]"
-                          : "border-jarvis/10 hover:border-purple-400/25"
-                      }`}
-                    >
-                      {isNL ? (
-                        <SparklesIcon className={`size-6 ${selected ? "text-purple-400" : "text-muted-foreground"}`} />
-                      ) : (
-                        <WrenchIcon className={`size-6 ${selected ? "text-purple-400" : "text-muted-foreground"}`} />
-                      )}
-                      <span className={`text-xs font-mono font-semibold tracking-wider truncate max-w-full ${selected ? "text-purple-400" : ""}`}>
-                        {sig.name}
-                      </span>
-                      <span className="text-xs font-mono text-purple-400/60">
-                        {isNL ? "NL" : `${(stats.win_rate as number) ?? 0}% WIN`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <SectionHeader step={3} label="Strategy & Triggers" sub="strategy_config — 진입 트리거 / 방어 / 필터를 직접 정의" />
+            <StrategyEditor value={strategyJson} onChange={setStrategyJson} />
           </section>
 
           {/* Bot Controls */}
           <section className="jarvis-card jarvis-corners rounded-lg p-6 space-y-4">
-            <SectionHeader step={4} label="Bot Controls" sub="Risk limits, schedule, and sizing (independent of signature)" />
+            <SectionHeader step={4} label="Bot Controls" sub="Risk limits, schedule, and sizing (independent of strategy)" />
 
             {/* Preset selector */}
             {!showAdvanced && (
@@ -439,17 +412,9 @@ export default function DeployPage() {
                 <PreviewRow label="SYMBOL" value={symbol} />
                 <div className="h-[1px] bg-jarvis/5" />
                 <PreviewRow label="BUDGET" value={budgetNum > 0 ? `$${budgetNum.toLocaleString()}` : "---"} />
+                <div className="h-[1px] bg-jarvis/5" />
+                <PreviewRow label="TRIGGER" value={judgmentModule} />
               </div>
-
-              {signature && (
-                <>
-                  <div className="h-[1px] bg-jarvis/10 my-2" />
-                  <PreviewRow label="STRATEGY" value={signature.name} />
-                  {signature.description && (
-                    <p className="text-xs font-mono text-muted-foreground/80">{signature.description}</p>
-                  )}
-                </>
-              )}
 
               {hasControls && (
                 <>
@@ -496,6 +461,11 @@ export default function DeployPage() {
               )}
             </Button>
 
+            {!strategyValid && (
+              <p className="text-xs font-mono text-center text-red-400/80 tracking-wider">
+                전략 JSON을 먼저 올바르게 작성하세요
+              </p>
+            )}
             <p className="text-xs font-mono text-center text-muted-foreground/80 tracking-wider">
               Bot will start in STOPPED state. Deploy from dashboard to activate.
             </p>

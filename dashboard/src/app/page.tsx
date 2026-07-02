@@ -59,22 +59,16 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-3">
           <Link
-            href="/trades"
-            className="jarvis-nav-link rounded border border-jarvis/20 bg-jarvis/5 px-3 py-2 text-xs font-mono text-jarvis/70 hover:text-jarvis hover:border-jarvis/40 transition-all tracking-wider"
-          >
-            MANUAL TRADES
-          </Link>
-          <Link
             href="/bot-trades"
             className="jarvis-nav-link rounded border border-jarvis/20 bg-jarvis/5 px-3 py-2 text-xs font-mono text-jarvis/70 hover:text-jarvis hover:border-jarvis/40 transition-all tracking-wider"
           >
             BOT TRADES
           </Link>
           <Link
-            href="/diy"
-            className="jarvis-nav-link jarvis-nav-link-purple rounded border border-purple-400/20 bg-purple-400/5 px-3 py-2 text-xs font-mono text-purple-400/70 hover:text-purple-400 hover:border-purple-400/40 transition-all tracking-wider"
+            href="/backtest"
+            className="jarvis-nav-link rounded border border-jarvis/20 bg-jarvis/5 px-3 py-2 text-xs font-mono text-jarvis/70 hover:text-jarvis hover:border-jarvis/40 transition-all tracking-wider"
           >
-            SIGNATURE
+            BACKTEST
           </Link>
         </div>
       </header>
