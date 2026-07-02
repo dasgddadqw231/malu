@@ -7,3 +7,7 @@ node_modules/
 .next/
 dist/
 .DS_Store
+
+# build artifacts
+engine/build/
+uv.lock
