@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Request
 
 from malu.exchange.models import Category
+from malu.utils.logger import get_logger
+
+log = get_logger("dashboard")
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -15,8 +20,17 @@ async def get_summary(request: Request):
 
     bot_statuses = manager.get_bot_statuses()
     budget_summary = await budget_ledger.get_summary()
-    available = await manager.get_available_budget()
-    total_pnl = trade_repo.get_total_pnl()
+    # Degrade gracefully when external deps are down so the UI still renders
+    try:
+        available = await manager.get_available_budget()
+    except Exception as e:
+        log.warning("available_budget_unavailable", error=str(e))
+        available = Decimal("0")
+    try:
+        total_pnl = trade_repo.get_total_pnl()
+    except Exception as e:
+        log.warning("total_pnl_unavailable", error=str(e))
+        total_pnl = Decimal("0")
 
     return {
         "bots": bot_statuses,
@@ -32,7 +46,11 @@ async def get_summary(request: Request):
 @router.get("/trades")
 async def get_all_trades(request: Request, limit: int = 200):
     trade_repo = request.app.state.trade_repo
-    trades = trade_repo.list_recent(limit=limit)
+    try:
+        trades = trade_repo.list_recent(limit=limit)
+    except Exception as e:
+        log.warning("trades_unavailable", error=str(e))
+        return []
     return [t.model_dump() for t in trades]
 
 
@@ -49,8 +67,12 @@ async def get_positions(request: Request):
     manager = request.app.state.bot_manager
     client = manager.client
 
-    # Fetch all linear positions from Bybit
-    all_positions = await client.get_positions(Category.LINEAR)
+    # Fetch all linear positions from Bybit; degrade to empty when unavailable
+    try:
+        all_positions = await client.get_positions(Category.LINEAR)
+    except Exception as e:
+        log.warning("positions_unavailable", error=str(e))
+        return []
 
     # Build a map of symbol -> bot for identification
     bot_symbols: dict[str, dict] = {}
